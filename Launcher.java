@@ -16,10 +16,10 @@ import java.util.Iterator;
 import java.util.Random;
 
 public class Launcher extends Application {
-    
+
     // EnemyTank 内部类
     class EnemyTank extends Tank {
-        private int aiState = 0; 
+        private int aiState = 0;
         private int stateTimer = 0;
         @SuppressWarnings("unused")
         private double escapeAngle = 0;
@@ -34,28 +34,31 @@ public class Launcher extends Application {
             if (isCharging) return;
             double targetNextX = x + dx;
             double targetNextY = y + dy;
+
+            // 防卡滑动检测：如果X或Y方向单向被阻挡，允许顺着墙面滑动通过
             boolean hitWallX = isCollidingWithWalls(targetNextX, y, size);
             boolean hitWallY = isCollidingWithWalls(x, targetNextY, size);
             boolean hitEnemyX = isCollidingWithOtherEnemies(this, targetNextX, y);
             boolean hitEnemyY = isCollidingWithOtherEnemies(this, x, targetNextY);
+
             if (!hitWallX && !hitEnemyX) {
                 x = targetNextX;
             } else if (hitWallX && !hitEnemyX) {
-                double slideY = (dy != 0) ? dy : (random.nextBoolean() ? 1.2 : -1.2);
+                double slideY = (dy != 0) ? dy : (random.nextBoolean() ? 1.5 : -1.5);
                 if (!isCollidingWithWalls(x, y + slideY, size)) y += slideY;
             }
 
             if (!hitWallY && !hitEnemyY) {
                 y = targetNextY;
             } else if (hitWallY && !hitEnemyY) {
-                double slideX = (dx != 0) ? dx : (random.nextBoolean() ? 1.2 : -1.2);
+                double slideX = (dx != 0) ? dx : (random.nextBoolean() ? 1.5 : -1.5);
                 if (!isCollidingWithWalls(x + slideX, y, size)) x += slideX;
             }
 
             if ((hitWallX || hitEnemyX) && (hitWallY || hitEnemyY)) {
                 if (aiState != 1) {
                     aiState = 1;
-                    stateTimer = 90; 
+                    stateTimer = 90;
                     escapeAngle = Math.atan2(-dy, -dx) + (random.nextDouble() * 1.0 - 0.5);
                 }
             }
@@ -63,28 +66,33 @@ public class Launcher extends Application {
 
         public void updateAI(PlayerTank player, ArrayList<Bullet> bList, ArrayList<Wall> wList) {
             if (player == null) return;
+            // 如果是Boss且正在传送引导中，暂停AI常规寻路与射击
+            if (this instanceof BossTank && ((BossTank) this).isTeleporting) {
+                return;
+            }
+
             double distToPlayer = getDistance(x, y, player.x, player.y);
             stateTimer--;
             Bullet threat = null;
             for (Bullet b : bList) {
-                if (!b.isEnemyBullet && getDistance(x, y, b.x, b.y) < 150) { 
-                    threat = b; 
-                    break; 
+                if (!b.isEnemyBullet && getDistance(x, y, b.x, b.y) < 150) {
+                    threat = b;
+                    break;
                 }
             }
 
-            if (threat != null && stateTimer <= 0) { 
-                aiState = 1; 
-                stateTimer = 40; 
-            } else if (stateTimer <= 0) { 
-                aiState = 0; 
-                stateTimer = random.nextInt(50) + 30; 
+            if (threat != null && stateTimer <= 0) {
+                aiState = 1;
+                stateTimer = 40;
+            } else if (stateTimer <= 0) {
+                aiState = 0;
+                stateTimer = random.nextInt(50) + 30;
             }
 
-            double baseMoveSpeed = (aiState == 0) ? 0.2 : 0.4;
-            
+            double baseMoveSpeed = (aiState == 0) ? 1.0 : 1.6;
+
             if (player.type == TANK_ARTILLERY && player.isCharging) {
-                baseMoveSpeed *= 0.25; 
+                baseMoveSpeed *= 0.25;
             }
 
             double mx = 0, my = 0;
@@ -139,6 +147,12 @@ public class Launcher extends Application {
         int hp = 5;
         int scatterTimer = 180;
 
+        // Boss传送所需核心属性
+        int teleportCooldown = 240; // 4秒触发一次 (4 * 60 = 240帧)
+        int teleportTimer = 0;      // 2秒传送引导倒计时 (2 * 60 = 120帧)
+        boolean isTeleporting = false;
+        double tpTargetX, tpTargetY;
+
         public BossTank(double x, double y) {
             super(x, y, TANK_NORMAL, Color.RED);
             this.size = 50;
@@ -146,12 +160,48 @@ public class Launcher extends Application {
 
         @Override
         public void update() {
+            if (isTeleporting) {
+                teleportTimer--;
+                if (teleportTimer <= 0) {
+                    // 引导结束，瞬间转移，彻底现身
+                    this.x = tpTargetX;
+                    this.y = tpTargetY;
+                    this.isTeleporting = false;
+                    this.teleportCooldown = 240;
+                }
+                return; // 传送期间处于虚无状态
+            }
+
             super.update();
             scatterTimer--;
             if (scatterTimer <= 0) {
                 fireScatterBullets();
                 scatterTimer = 180;
             }
+
+            // 处理传送CD计数
+            teleportCooldown--;
+            if (teleportCooldown <= 0) {
+                startTeleport();
+            }
+        }
+
+        private void startTeleport() {
+            // 随机寻找不会卡在墙体里的安全落点
+            int attempts = 0;
+            double rx = this.x, ry = this.y;
+            while (attempts < 50) {
+                rx = random.nextInt(WIDTH - 200) + 100;
+                ry = random.nextInt(HEIGHT - 200) + 100;
+                if (!isCollidingWithWalls(rx, ry, this.size)) {
+                    break;
+                }
+                attempts++;
+            }
+            this.tpTargetX = rx;
+            this.tpTargetY = ry;
+            this.isTeleporting = true;
+            this.teleportTimer = 120; // 2秒引导时间
         }
 
         private void fireScatterBullets() {
@@ -186,7 +236,7 @@ public class Launcher extends Application {
     private int level = 1;
     private int showLevelTimer = 0;
 
-    // 新增：开局3秒倒计时变量（60帧 = 1秒，180帧 = 3秒，再加30帧用于显示最后的"GO!"）
+    // 开局倒计时变量
     private boolean isCountingDown = false;
     private int countdownTimer = 0;
 
@@ -196,7 +246,22 @@ public class Launcher extends Application {
     private ArrayList<Wall> walls = new ArrayList<>();
     private ArrayList<ShieldItem> shields = new ArrayList<>();
     private ArrayList<ExplosionEffect> explosions = new ArrayList<>();
-    
+
+    // 玩家火炮落弹任务队列
+    class PlayerArtilleryStrike {
+        double targetX, targetY;
+        int remainingFrames;
+        double strikeRadius;
+
+        public PlayerArtilleryStrike(double tx, double ty, int frames, double radius) {
+            this.targetX = tx;
+            this.targetY = ty;
+            this.remainingFrames = frames;
+            this.strikeRadius = radius;
+        }
+    }
+    private ArrayList<PlayerArtilleryStrike> playerStrikes = new ArrayList<>();
+
     // 空中支援列表
     private ArrayList<Airstrike> airstrikes = new ArrayList<>();
 
@@ -207,8 +272,8 @@ public class Launcher extends Application {
     private long lastShieldSpawnTime = 0;
 
     // 空中支援控制变量
-    private int airstrikeCooldownTimer = 0; 
-    private static final int AIRSTRIKE_CD_MAX = 900; 
+    private int airstrikeCooldownTimer = 0;
+    private static final int AIRSTRIKE_CD_MAX = 900;
 
     private Canvas canvas;
 
@@ -272,7 +337,7 @@ public class Launcher extends Application {
     }
 
     private void triggerOrExplodeAirstrike() {
-        if (gameState != STATE_PLAYING || isCountingDown) return; // 倒计时期间禁止技能
+        if (gameState != STATE_PLAYING || isCountingDown) return;
 
         if (!airstrikes.isEmpty()) {
             for (Airstrike air : airstrikes) {
@@ -282,7 +347,7 @@ public class Launcher extends Application {
         }
 
         if (airstrikeCooldownTimer <= 0) {
-            airstrikeCooldownTimer = AIRSTRIKE_CD_MAX; 
+            airstrikeCooldownTimer = AIRSTRIKE_CD_MAX;
             for (int i = 0; i < 3; i++) {
                 double rx = random.nextInt(WIDTH - 200) + 100;
                 double ry = random.nextInt(HEIGHT - 200) + 100;
@@ -297,34 +362,50 @@ public class Launcher extends Application {
             level = 1;
         }
         showLevelTimer = 90;
-        airstrikeCooldownTimer = 0; 
+        airstrikeCooldownTimer = 0;
 
-        // 开启 3 秒开局倒计时 (180帧为倒数 3,2,1；多加30帧用于显示"GO!")
         isCountingDown = true;
-        countdownTimer = 210; 
+        countdownTimer = 210;
 
-        // 清空按键缓存，防止上一关的按键残余导致开局坦克乱跑
         for (int i = 0; i < keys.length; i++) keys[i] = false;
 
         bullets.clear();
         enemies.clear();
         shields.clear();
         explosions.clear();
-        airstrikes.clear(); 
+        airstrikes.clear();
+        playerStrikes.clear();
 
         generateRandomWalls();
 
         int px = 100, py = HEIGHT / 2;
+        while (isCollidingWithWalls(px, py, 34)) {
+            px += 15;
+            if (px > WIDTH - 100) { px = 100; py += 15; }
+        }
         player = new PlayerTank(px, py, selectedTankType);
+        player.invincibleTimer = 300;
 
+        // 修改后的 Boss 关卡逻辑
         if (level % 4 == 0) {
-            BossTank boss = new BossTank(WIDTH / 2.0, HEIGHT / 2.0);
-            enemies.add(boss);
-            int minionCount = (level / 4) - 1;
-            for (int i = 0; i < minionCount; i++) {
-                enemies.add(new EnemyTank(200 + (i * 150), 200 + (i * 150), random.nextInt(3), Color.ORANGE));
+            // 计算当前关卡需要多少个 Boss
+            int bossCount = 1 + ((level / 4) - 1);
+
+            for (int i = 0; i < bossCount; i++) {
+                // 为了避免 Boss 重叠，分散它们的生成位置
+                double startX = (WIDTH / 4.0) + (i % 2) * (WIDTH / 2.0);
+                double startY = (HEIGHT / 4.0) + (i / 2) * (HEIGHT / 3.0);
+
+                BossTank boss = new BossTank(startX, startY);
+                // 确保 Boss 不卡墙
+                while (isCollidingWithWalls(boss.x, boss.y, boss.size)) {
+                    boss.x += 20;
+                    boss.y += 20;
+                }
+                enemies.add(boss);
             }
         } else {
+            // 原有普通关卡逻辑
             int enemyCount = 0;
             if (level == 1) enemyCount = 1;
             else if (level == 2) enemyCount = 2;
@@ -335,8 +416,8 @@ public class Launcher extends Application {
             for (int i = 0; i < enemyCount; i++) {
                 int ex, ey;
                 do {
-                    ex = random.nextInt(WIDTH - 200) + 150;
-                    ey = random.nextInt(HEIGHT - 150) + 50;
+                    ex = random.nextInt(WIDTH - 250) + 150;
+                    ey = random.nextInt(HEIGHT - 200) + 50;
                 } while (getDistance(px, py, ex, ey) < 200 || isCollidingWithWalls(ex, ey, 34));
 
                 int eType = random.nextInt(3);
@@ -354,13 +435,34 @@ public class Launcher extends Application {
         walls.add(new Wall(0, 0, 20, HEIGHT));
         walls.add(new Wall(WIDTH - 20, 0, 20, HEIGHT));
 
-        int wallCount = random.nextInt(4) + 5;
+        // 大幅暴增随机墙体数量
+        int wallCount = random.nextInt(14) + 35;
         for (int i = 0; i < wallCount; i++) {
             int wx = random.nextInt(WIDTH - 300) + 150;
-            int wy = random.nextInt(HEIGHT - 200) + 80;
-            int w = random.nextBoolean() ? 120 : 30;
-            int h = (w == 30) ? 120 : 30;
-            walls.add(new Wall(wx, wy, w, h));
+            int wy = random.nextInt(HEIGHT - 250) + 80;
+
+            // 缩小横纵截面厚度为 18 像素
+            int w = random.nextBoolean() ? 75 : 18;
+            int h = (w == 18) ? 75 : 18;
+
+            // 安全区半径保护：保障玩家出生位置和地图中心枢纽不被强行封堵
+            if (getDistance(wx + w/2.0, wy + h/2.0, 100, HEIGHT/2.0) < 95 ||
+                    getDistance(wx + w/2.0, wy + h/2.0, WIDTH/2.0, HEIGHT/2.0) < 95) {
+                continue;
+            }
+
+            Wall newWall = new Wall(wx, wy, w, h);
+            boolean overlap = false;
+            // 适当缩减墙体间距阈值为 45 像素，生成紧凑密集的战术车道
+            for(Wall existing : walls) {
+                if (existing.intersects(wx - 45, wy - 45, w + 90, h + 90)) {
+                    overlap = true;
+                    break;
+                }
+            }
+            if(!overlap) {
+                walls.add(newWall);
+            }
         }
     }
 
@@ -387,16 +489,45 @@ public class Launcher extends Application {
         return Math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
     }
 
+    // 判断射线/线段是否穿过某堵墙，实现掩体动态延时计算
+    private int countWallsBetween(double x1, double y1, double x2, double y2) {
+        int count = 0;
+        for (Wall w : walls) {
+            if (w.x == 0 || w.y == 0 || w.x + w.width == WIDTH || w.y + w.height == HEIGHT) {
+                continue;
+            }
+            if (lineIntersectsRect(x1, y1, x2, y2, w.x, w.y, w.width, w.height)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private boolean lineIntersectsRect(double x1, double y1, double x2, double y2, double rx, double ry, double rw, double rh) {
+        if (lineIntersectsLine(x1, y1, x2, y2, rx, ry, rx + rw, ry)) return true;
+        if (lineIntersectsLine(x1, y1, x2, y2, rx, ry + rh, rx + rw, ry + rh)) return true;
+        if (lineIntersectsLine(x1, y1, x2, y2, rx, ry, rx, ry + rh)) return true;
+        if (lineIntersectsLine(x1, y1, x2, y2, rx + rw, ry, rx + rw, ry + rh)) return true;
+        return false;
+    }
+
+    private boolean lineIntersectsLine(double x1, double y1, double x2, double y2, double x3, double y3, double x4, double y4) {
+        double d = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3);
+        if (d == 0) return false;
+        double u = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / d;
+        double v = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / d;
+        return (u >= 0 && u <= 1 && v >= 0 && v <= 1);
+    }
+
     private void updateGame() {
         if (showLevelTimer > 0) showLevelTimer--;
 
-        // 处理倒计时状态逻辑
         if (isCountingDown) {
             countdownTimer--;
             if (countdownTimer <= 0) {
                 isCountingDown = false;
             }
-            return; // 核心改动：倒计时期间不更新游戏内容（坦克、子弹全部静止）
+            return;
         }
 
         if (airstrikeCooldownTimer > 0) {
@@ -414,11 +545,23 @@ public class Launcher extends Application {
             }
         }
 
+        // 更新玩家火炮定点打击倒计时队列
+        Iterator<PlayerArtilleryStrike> strikeIter = playerStrikes.iterator();
+        while (strikeIter.hasNext()) {
+            PlayerArtilleryStrike strike = strikeIter.next();
+            strike.remainingFrames--;
+            if (strike.remainingFrames <= 0) {
+                explosions.add(new ExplosionEffect(strike.targetX, strike.targetY));
+                triggerDynamicExplosionDamage(strike.targetX, strike.targetY, strike.strikeRadius);
+                strikeIter.remove();
+            }
+        }
+
         double dx = 0, dy = 0;
-        if (keys[87]) dy -= 2;
-        if (keys[83]) dy += 2;
-        if (keys[65]) dx -= 2;
-        if (keys[68]) dx += 2;//玩家移速
+        if (keys[87]) dy -= 3;
+        if (keys[83]) dy += 3;
+        if (keys[65]) dx -= 3;
+        if (keys[68]) dx += 3;
         if (dx != 0 || dy != 0) {
             player.move(dx, dy, walls);
         }
@@ -441,7 +584,7 @@ public class Launcher extends Application {
         while (si.hasNext()) {
             ShieldItem s = si.next();
             if (getDistance(player.x, player.y, s.x, s.y) < 30) {
-                player.invincibleTimer = 300; 
+                player.invincibleTimer = 300;
                 si.remove();
             }
         }
@@ -477,9 +620,14 @@ public class Launcher extends Application {
                 Iterator<EnemyTank> eIter = enemies.iterator();
                 while (eIter.hasNext()) {
                     EnemyTank enemy = eIter.next();
+
+                    if (enemy instanceof BossTank && ((BossTank) enemy).isTeleporting) {
+                        continue;
+                    }
+
                     if (getDistance(b.x, b.y, enemy.x, enemy.y) < 20) {
                         hitEnemy = true;
-                        
+
                         if (enemy instanceof BossTank) {
                             ((BossTank) enemy).hp--;
                             if (((BossTank) enemy).hp <= 0) {
@@ -519,7 +667,10 @@ public class Launcher extends Application {
     }
 
     private void triggerExplosionDamage(double ex, double ey) {
-        int radius = 80;
+        triggerDynamicExplosionDamage(ex, ey, 80);
+    }
+
+    private void triggerDynamicExplosionDamage(double ex, double ey, double radius) {
         if (getDistance(ex, ey, player.x, player.y) < radius) {
             if (player.invincibleTimer <= 0) {
                 gameState = STATE_GAMEOVER;
@@ -529,9 +680,22 @@ public class Launcher extends Application {
         Iterator<EnemyTank> eIter = enemies.iterator();
         while (eIter.hasNext()) {
             EnemyTank enemy = eIter.next();
+
+            if (enemy instanceof BossTank && ((BossTank) enemy).isTeleporting) {
+                continue;
+            }
+
             if (getDistance(ex, ey, enemy.x, enemy.y) < radius) {
-                eIter.remove();
-                score++;
+                if (enemy instanceof BossTank) {
+                    ((BossTank) enemy).hp--;
+                    if (((BossTank) enemy).hp <= 0) {
+                        eIter.remove();
+                        score++;
+                    }
+                } else {
+                    eIter.remove();
+                    score++;
+                }
             }
         }
     }
@@ -546,9 +710,22 @@ public class Launcher extends Application {
         Iterator<EnemyTank> eIter = enemies.iterator();
         while (eIter.hasNext()) {
             EnemyTank enemy = eIter.next();
+
+            if (enemy instanceof BossTank && ((BossTank) enemy).isTeleporting) {
+                continue;
+            }
+
             if (getDistance(ax, ay, enemy.x, enemy.y) < radius) {
-                eIter.remove();
-                score++;
+                if (enemy instanceof BossTank) {
+                    ((BossTank) enemy).hp--;
+                    if (((BossTank) enemy).hp <= 0) {
+                        eIter.remove();
+                        score++;
+                    }
+                } else {
+                    eIter.remove();
+                    score++;
+                }
             }
         }
     }
@@ -566,7 +743,7 @@ public class Launcher extends Application {
                 startNewLevel(true);
             }
         } else if (gameState == STATE_PLAYING) {
-            if (!isCountingDown) { // 倒计时期间不允许射击
+            if (!isCountingDown) {
                 player.shoot(bullets, mousePoint);
             }
         } else if (gameState == STATE_GAMEOVER) {
@@ -646,16 +823,29 @@ public class Launcher extends Application {
             gc.strokeOval(s.x - 12, s.y - 12, 24, 24);
         }
 
-        if (player.type == TANK_ARTILLERY && player.isCharging) {
-            gc.setStroke(player.chargeTimer > 60 ? Color.BLUE : Color.RED);
-            gc.setLineWidth(2);
-            gc.setLineDashes(9);
-            double endX = player.x + Math.cos(player.angle) * 1200;
-            double endY = player.y + Math.sin(player.angle) * 1200;
-            gc.strokeLine(player.x, player.y, endX, endY);
+        for (PlayerArtilleryStrike strike : playerStrikes) {
+            gc.setStroke(Color.WHITE);
+            gc.setLineWidth(1.5);
+            gc.setLineDashes(4);
+            gc.strokeOval(strike.targetX - strike.strikeRadius, strike.targetY - strike.strikeRadius, strike.strikeRadius * 2, strike.strikeRadius * 2);
             gc.setLineDashes(null);
+
+            gc.setFill(Color.WHITE);
+            gc.setFont(Font.font("Impact", FontWeight.NORMAL, 14));
+            gc.fillText(String.format("%.1fs", strike.remainingFrames / 60.0), strike.targetX - 10, strike.targetY - 25);
         }
 
+        if (player.type == TANK_ARTILLERY) {
+            gc.save();
+            gc.setStroke(Color.WHITE);
+            gc.setLineWidth(2);
+            gc.strokeOval(mousePoint.getX() - 16, mousePoint.getY() - 16, 32, 32);
+            gc.strokeLine(mousePoint.getX() - 22, mousePoint.getY(), mousePoint.getX() + 22, mousePoint.getY());
+            gc.strokeLine(mousePoint.getX(), mousePoint.getY() - 22, mousePoint.getX(), mousePoint.getY() + 22);
+            gc.restore();
+        }
+
+        // 绘制玩家
         gc.save();
         gc.translate(player.x, player.y);
         gc.rotate(Math.toDegrees(player.angle));
@@ -666,7 +856,7 @@ public class Launcher extends Application {
         gc.setFill(Color.DARKGRAY);
         gc.fillRect(5, -4, 25, 8);
         gc.restore();
-        
+
         if (player.invincibleTimer > 0) {
             gc.setStroke(Color.rgb(255, 215, 0, 0.75));
             gc.setLineWidth(4);
@@ -674,25 +864,61 @@ public class Launcher extends Application {
         }
 
         for (EnemyTank enemy : enemies) {
+            if (enemy instanceof BossTank && ((BossTank) enemy).isTeleporting) {
+                gc.save();
+                gc.setGlobalAlpha(0.25);
+                gc.translate(enemy.x, enemy.y);
+                gc.rotate(Math.toDegrees(enemy.angle));
+                gc.setFill(Color.DARKRED);
+                gc.fillRect(-25, -20, 50, 40);
+                gc.restore();
+
+                BossTank bTank = (BossTank) enemy;
+                gc.save();
+                gc.setFill(Color.rgb(0, 0, 0, 0.4));
+                gc.fillOval(bTank.tpTargetX - 25, bTank.tpTargetY - 25, 50, 50);
+                gc.setStroke(Color.BLACK);
+                gc.setLineWidth(3);
+                gc.strokeOval(bTank.tpTargetX - 25, bTank.tpTargetY - 25, 50, 50);
+                gc.restore();
+                continue;
+            }
+
             gc.save();
             gc.translate(enemy.x, enemy.y);
             gc.rotate(Math.toDegrees(enemy.angle));
             gc.setFill(enemy.color);
-            gc.fillRect(-20, -15, 40, 30);
-            gc.setFill(Color.LIGHTGRAY);
-            gc.fillRect(-5, -10, 18, 20);
-            gc.setFill(Color.DARKGRAY);
-            gc.fillRect(5, -4, 25, 8);
+            if (enemy instanceof BossTank) {
+                gc.fillRect(-25, -20, 50, 40);
+                gc.setFill(Color.LIGHTGRAY);
+                gc.fillRect(-8, -15, 22, 30);
+                gc.setFill(Color.BLACK);
+                gc.fillRect(8, -6, 32, 12);
+            } else {
+                gc.fillRect(-20, -15, 40, 30);
+                gc.setFill(Color.LIGHTGRAY);
+                gc.fillRect(-5, -10, 18, 20);
+                gc.setFill(Color.DARKGRAY);
+                gc.fillRect(5, -4, 25, 8);
+            }
             gc.restore();
-            
+
             if (enemy.type == TANK_ARTILLERY && enemy.isCharging) {
-                gc.setStroke(enemy.chargeTimer > 60 ? Color.BLUE : Color.RED);
+                gc.setStroke(Color.RED);
                 gc.setLineWidth(1);
                 gc.setLineDashes(5);
                 double exX = enemy.x + Math.cos(enemy.angle) * 1000;
                 double exY = enemy.y + Math.sin(enemy.angle) * 1000;
                 gc.strokeLine(enemy.x, enemy.y, exX, exY);
                 gc.setLineDashes(null);
+
+                gc.save();
+                gc.setStroke(Color.RED);
+                gc.setLineWidth(2);
+                gc.setFill(Color.rgb(255, 0, 0, 0.2));
+                gc.fillOval(enemy.chargeTargetX - 80, enemy.chargeTargetY - 80, 160, 160);
+                gc.strokeOval(enemy.chargeTargetX - 80, enemy.chargeTargetY - 80, 160, 160);
+                gc.restore();
             }
         }
 
@@ -745,36 +971,27 @@ public class Launcher extends Application {
             gc.fillText("【1 键呼叫空中支援】 状态：就绪 (无限制次)", 220, HEIGHT - 40);
         }
 
-        // 修改：将关卡 Stage 显示稍微上移，给中间的 3,2,1 倒计时留出视觉中心空间
         if (showLevelTimer > 0) {
-            gc.setFill(Color.rgb(255, 215, 0, 0.45)); // 降低透明度防遮挡
+            gc.setFill(Color.rgb(255, 215, 0, 0.45));
             gc.setFont(Font.font("Comic Sans MS", FontWeight.BOLD, 40));
             gc.fillText("STAGE " + level, WIDTH / 2.0 - 90, HEIGHT / 2.0 - 150);
         }
 
-        // 新增：绘制屏幕中央3秒倒计时特效
         if (isCountingDown) {
             gc.save();
             gc.setTextBaseline(VPos.CENTER);
             if (countdownTimer > 30) {
-                // 计算当前是第几秒 (3, 2, 1)
                 int secondsLeft = (countdownTimer - 31) / 60 + 1;
-                
-                // 呼吸放大的缩放效果 (每秒的帧数内从大到小)
                 int frameInSecond = (countdownTimer - 31) % 60;
                 double scale = 1.0 + (frameInSecond / 60.0) * 0.6;
-                
+
                 gc.setFont(Font.font("Impact", FontWeight.BOLD, 90 * scale));
-                gc.setFill(Color.ORANGE);
-                // 阴影
                 gc.setFill(Color.BLACK);
                 gc.fillText(String.valueOf(secondsLeft), WIDTH / 2.0 - 20, HEIGHT / 2.0 - 20);
-                // 主体字
                 gc.getCanvas().setFocusTraversable(true);
                 gc.setFill(Color.rgb(255, 69, 0));
                 gc.fillText(String.valueOf(secondsLeft), WIDTH / 2.0 - 23, HEIGHT / 2.0 - 23);
             } else {
-                // 最后 0.5 秒 (30帧) 显示 "GO!"
                 gc.setFont(Font.font("Impact", FontWeight.BOLD, 100));
                 gc.setFill(Color.GREENYELLOW);
                 gc.fillText("READY? GO!!", WIDTH / 2.0 - 220, HEIGHT / 2.0 - 30);
@@ -808,12 +1025,12 @@ public class Launcher extends Application {
         gc.fillRect(WIDTH / 2.0 - 10, HEIGHT / 2.0 + 80, 20, 30);
     }
 
-    // --- 实体内部类类群 ---
+    // 实体内部类类群
 
     class Airstrike {
         double x, y;
-        double radius = 110;  
-        int timer = 180;      
+        double radius = 110;
+        int timer = 180;
         boolean isExploded = false;
 
         public Airstrike(double x, double y) {
@@ -822,7 +1039,7 @@ public class Launcher extends Application {
         }
 
         public void update() {
-            if (isExploded) return; 
+            if (isExploded) return;
             timer--;
             if (timer <= 0) {
                 isExploded = true;
@@ -888,7 +1105,7 @@ public class Launcher extends Application {
     }
 
     class PlayerTank extends Tank {
-        int invincibleTimer = 0; 
+        int invincibleTimer = 0;
 
         public PlayerTank(double x, double y, int type) {
             super(x, y, type);
@@ -933,11 +1150,22 @@ public class Launcher extends Application {
                 }
             } else if (type == TANK_ARTILLERY) {
                 if (cooldown <= 0) {
-                    isCharging = true;
-                    chargeTimer = 90;
-                    chargeTargetX = target.getX();
-                    chargeTargetY = target.getY();
-                    cooldown = 150;
+                    double targetX = target.getX();
+                    double targetY = target.getY();
+
+                    int wallCount = countWallsBetween(this.x, this.y, targetX, targetY);
+
+                    // 将最快无阻挡攻击速度调整为 0.66秒（40帧)。每多一堵墙增加 0.4 秒 (24帧)
+                    int totalFrames = 40 + (wallCount * 24);
+                    if (totalFrames > 210) totalFrames = 210;
+
+                    double addedRadius = wallCount * 10;
+                    if (addedRadius > 40) addedRadius = 40;
+                    double finalRadius = 80 + addedRadius;
+
+                    Launcher.this.playerStrikes.add(new PlayerArtilleryStrike(targetX, targetY, totalFrames, finalRadius));
+
+                    cooldown = 120;
                 }
             }
         }
@@ -972,8 +1200,8 @@ public class Launcher extends Application {
             double actualVy = vy;
 
             if (player != null && player.type == TANK_ARTILLERY && player.isCharging) {
-                actualVx *= 0.25; 
-                actualVy *= 0.25; 
+                actualVx *= 0.25;
+                actualVy *= 0.25;
             }
 
             x += actualVx;
