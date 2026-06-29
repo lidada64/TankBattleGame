@@ -219,6 +219,7 @@ public class Launcher extends Application {
     private static final int STATE_MENU = 0;
     private static final int STATE_PLAYING = 1;
     private static final int STATE_GAMEOVER = 2;
+    private static final int STATE_HELP = 3;
     private int gameState = STATE_MENU;
 
     // 坦克类型
@@ -295,6 +296,10 @@ public class Launcher extends Application {
 
             if (e.getCode() == KeyCode.DIGIT1 || e.getCode() == KeyCode.NUMPAD1) {
                 triggerOrExplodeAirstrike();
+            }
+
+            if (gameState == STATE_HELP && e.getCode() == KeyCode.ESCAPE) {
+                gameState = STATE_MENU;
             }
         });
 
@@ -732,6 +737,11 @@ public class Launcher extends Application {
 
     private void handleMousePressed(double mx, double my) {
         if (gameState == STATE_MENU) {
+            // Click help button
+            if (mx >= WIDTH - 70 && mx <= WIDTH - 30 && my >= 20 && my <= 60) {
+                gameState = STATE_HELP;
+                return;
+            }
             int[] selectXs = {WIDTH / 2 - 250, WIDTH / 2 - 30, WIDTH / 2 + 190};
             for (int i = 0; i < 3; i++) {
                 if (mx >= selectXs[i] - 40 && mx <= selectXs[i] + 100 && my >= 230 && my <= 380) {
@@ -746,6 +756,16 @@ public class Launcher extends Application {
             if (!isCountingDown) {
                 player.shoot(bullets, mousePoint);
             }
+        } else if (gameState == STATE_HELP) {
+
+            if (mx >= WIDTH / 2.0 - 100 &&
+                    mx <= WIDTH / 2.0 + 100 &&
+                    my >= 620 &&
+                    my <= 670) {
+
+                gameState = STATE_MENU;
+            }
+
         } else if (gameState == STATE_GAMEOVER) {
             if (mx >= WIDTH / 2 - 40 && mx <= WIDTH / 2 + 40 && my >= HEIGHT / 2 + 20 && my <= HEIGHT / 2 + 120) {
                 gameState = STATE_MENU;
@@ -761,6 +781,8 @@ public class Launcher extends Application {
             drawGame(gc);
         } else if (gameState == STATE_GAMEOVER) {
             drawGameOver(gc);
+        }else if (gameState == STATE_HELP) {
+            drawHelp(gc);
         }
     }
 
@@ -803,6 +825,53 @@ public class Launcher extends Application {
         gc.setFill(Color.WHITE);
         gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 24));
         gc.fillText("开始游戏", WIDTH / 2.0 - 48, 475);
+        // Help button
+        gc.setFill(Color.DARKBLUE);
+        gc.fillOval(WIDTH - 70, 20, 40, 40);
+
+        gc.setStroke(Color.WHITE);
+        gc.setLineWidth(2);
+        gc.strokeOval(WIDTH - 70, 20, 40, 40);
+
+        gc.setFill(Color.WHITE);
+        gc.setFont(Font.font("Arial", FontWeight.BOLD, 24));
+        gc.fillText("?", WIDTH - 56, 24);
+    }
+
+    private void drawHelp(GraphicsContext gc) {
+        gc.setFill(Color.rgb(25, 25, 25));
+        gc.fillRect(0, 0, WIDTH, HEIGHT);
+
+        gc.setTextBaseline(VPos.TOP);
+
+        gc.setFill(Color.WHITE);
+        gc.setFont(Font.font("Arial", FontWeight.BOLD, 42));
+        gc.fillText("Game Introduction", WIDTH / 2.0 - 190, 60);
+
+        gc.setFont(Font.font("Arial", FontWeight.NORMAL, 22));
+        gc.fillText("Objective:", 180, 150);
+        gc.fillText("Control your tank, defeat all enemy tanks, and advance to the next stage.", 180, 185);
+
+        gc.fillText("Controls:", 180, 250);
+        gc.fillText("W / A / S / D: Move the tank", 180, 285);
+        gc.fillText("Mouse Movement: Aim the cannon", 180, 320);
+        gc.fillText("Left Mouse Button: Fire", 180, 355);
+        gc.fillText("Key 1: Call air support / detonate airstrike", 180, 390);
+
+        gc.fillText("Tank Types:", 180, 455);
+        gc.fillText("Normal Tank: Continuous fire. Bullets can bounce once.", 180, 490);
+        gc.fillText("Shotgun Tank: Fires multiple bullets at once for close-range combat.", 180, 525);
+        gc.fillText("Artillery Tank: Launches delayed long-range strikes with area damage.", 180, 560);
+
+        gc.setFill(Color.DARKGRAY);
+        gc.fillRect(WIDTH / 2.0 - 100, 620, 200, 50);
+        gc.setStroke(Color.WHITE);
+        gc.setLineWidth(1);
+        gc.strokeRect(WIDTH / 2.0 - 100, 620, 200, 50);
+
+        gc.setFill(Color.WHITE);
+        gc.setFont(Font.font("Arial", FontWeight.BOLD, 24));
+        gc.fillText("Back", WIDTH / 2.0 - 28, 630);
     }
 
     private void drawGame(GraphicsContext gc) {
