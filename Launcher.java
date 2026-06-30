@@ -20,7 +20,7 @@ public class Launcher extends Application {
     // EnemyTank 内部类
     class EnemyTank extends Tank {
         private int aiState = 0;
-        private int stateTimer = 0;
+        private double stateTimer = 0;
         @SuppressWarnings("unused")
         private double escapeAngle = 0;
 
@@ -29,8 +29,7 @@ public class Launcher extends Application {
             this.color = c;
         }
 
-        @Override
-        public void move(double dx, double dy, ArrayList<Wall> walls) {
+        public void move(double dx, double dy, ArrayList<Wall> walls, double delta) {
             if (isCharging) return;
             double targetNextX = x + dx;
             double targetNextY = y + dy;
@@ -44,14 +43,14 @@ public class Launcher extends Application {
             if (!hitWallX && !hitEnemyX) {
                 x = targetNextX;
             } else if (hitWallX && !hitEnemyX) {
-                double slideY = (dy != 0) ? dy : (random.nextBoolean() ? 1.5 : -1.5);
+                double slideY = (dy != 0) ? dy : (random.nextBoolean() ? 1.5 * delta : -1.5 * delta);
                 if (!isCollidingWithWalls(x, y + slideY, size)) y += slideY;
             }
 
             if (!hitWallY && !hitEnemyY) {
                 y = targetNextY;
             } else if (hitWallY && !hitEnemyY) {
-                double slideX = (dx != 0) ? dx : (random.nextBoolean() ? 1.5 : -1.5);
+                double slideX = (dx != 0) ? dx : (random.nextBoolean() ? 1.5 * delta : -1.5 * delta);
                 if (!isCollidingWithWalls(x + slideX, y, size)) x += slideX;
             }
 
@@ -64,7 +63,7 @@ public class Launcher extends Application {
             }
         }
 
-        public void updateAI(PlayerTank player, ArrayList<Bullet> bList, ArrayList<Wall> wList) {
+        public void updateAI(PlayerTank player, ArrayList<Bullet> bList, ArrayList<Wall> wList, double delta) {
             if (player == null) return;
             // 如果是Boss且正在传送引导中，暂停AI常规寻路与射击
             if (this instanceof BossTank && ((BossTank) this).isTeleporting) {
@@ -72,7 +71,7 @@ public class Launcher extends Application {
             }
 
             double distToPlayer = getDistance(x, y, player.x, player.y);
-            stateTimer--;
+            stateTimer -= delta;
             Bullet threat = null;
             for (Bullet b : bList) {
                 if (!b.isEnemyBullet && getDistance(x, y, b.x, b.y) < 150) {
@@ -89,7 +88,7 @@ public class Launcher extends Application {
                 stateTimer = random.nextInt(50) + 30;
             }
 
-            double baseMoveSpeed = (aiState == 0) ? 1.0 : 1.6;
+            double baseMoveSpeed = (aiState == 0) ? 1.0 * SPEED_MULTIPLIER * delta : 1.6 * SPEED_MULTIPLIER * delta;
 
             if (player.type == TANK_ARTILLERY && player.isCharging) {
                 baseMoveSpeed *= 0.25;
@@ -106,10 +105,10 @@ public class Launcher extends Application {
             }
 
             if (getDistance(x + mx, y + my, player.x, player.y) > 45) {
-                move(mx, my, wList);
+                move(mx, my, wList, delta);
             }
 
-            if (!isCharging && cooldown <= 0 && distToPlayer < 500 && random.nextInt(100) < 4) {
+            if (!isCharging && cooldown <= 0 && distToPlayer < 500 && random.nextDouble() < 0.04 * delta) {
                 enemyFire(bList, player);
             }
         }
@@ -117,7 +116,7 @@ public class Launcher extends Application {
         private void enemyFire(ArrayList<Bullet> bList, PlayerTank p) {
             double enemyAngle = Math.atan2(p.y - y, p.x - x);
             if (type == TANK_NORMAL) {
-                Bullet b = new Bullet(x, y, enemyAngle, true, TANK_NORMAL, true, 6);
+                Bullet b = new Bullet(x, y, enemyAngle, true, TANK_NORMAL, true, (int)(6 * SPEED_MULTIPLIER));
                 b.isEnemyBullet = true;
                 b.color = this.color;
                 bList.add(b);
@@ -125,7 +124,7 @@ public class Launcher extends Application {
             } else if (type == TANK_SHOTGUN) {
                 double sAngle = enemyAngle - 0.3;
                 for (int i = 0; i < 5; i++) {
-                    Bullet b = new Bullet(x, y, sAngle + (i * 0.15), false, TANK_SHOTGUN, true, 6);
+                    Bullet b = new Bullet(x, y, sAngle + (i * 0.15), false, TANK_SHOTGUN, true, (int)(6 * SPEED_MULTIPLIER));
                     b.isEnemyBullet = true;
                     b.color = this.color;
                     b.life = 25;
@@ -145,11 +144,11 @@ public class Launcher extends Application {
     // Boss 机理
     class BossTank extends EnemyTank {
         int hp = 5;
-        int scatterTimer = 180;
+        double scatterTimer = 180;
 
         // Boss传送所需核心属性
-        int teleportCooldown = 240; // 4秒触发一次 (4 * 60 = 240帧)
-        int teleportTimer = 0;      // 2秒传送引导倒计时 (2 * 60 = 120帧)
+        double teleportCooldown = 240; // 4秒触发一次 (4 * 60 = 240帧)
+        double teleportTimer = 0;      // 2秒传送引导倒计时 (2 * 60 = 120帧)
         boolean isTeleporting = false;
         double tpTargetX, tpTargetY;
 
@@ -159,9 +158,9 @@ public class Launcher extends Application {
         }
 
         @Override
-        public void update() {
+        public void update(double delta) {
             if (isTeleporting) {
-                teleportTimer--;
+                teleportTimer -= delta;
                 if (teleportTimer <= 0) {
                     // 引导结束，瞬间转移，彻底现身
                     this.x = tpTargetX;
@@ -172,15 +171,15 @@ public class Launcher extends Application {
                 return; // 传送期间处于虚无状态
             }
 
-            super.update();
-            scatterTimer--;
+            super.update(delta);
+            scatterTimer -= delta;
             if (scatterTimer <= 0) {
                 fireScatterBullets();
                 scatterTimer = 180;
             }
 
             // 处理传送CD计数
-            teleportCooldown--;
+            teleportCooldown -= delta;
             if (teleportCooldown <= 0) {
                 startTeleport();
             }
@@ -201,13 +200,13 @@ public class Launcher extends Application {
             this.tpTargetX = rx;
             this.tpTargetY = ry;
             this.isTeleporting = true;
-            this.teleportTimer = 120; // 2秒引导时间
+            this.teleportTimer = 120.0; // 2秒引导时间
         }
 
         private void fireScatterBullets() {
             for (int i = 0; i < 8; i++) {
                 double angle = i * (Math.PI / 4);
-                Bullet b = new Bullet(x, y, angle, true, TANK_SHOTGUN, true, 3);
+                Bullet b = new Bullet(x, y, angle, true, TANK_SHOTGUN, true, (int)(3 * SPEED_MULTIPLIER));
                 b.isEnemyBullet = true;
                 b.life = 180;
                 Launcher.this.bullets.add(b);
@@ -220,6 +219,8 @@ public class Launcher extends Application {
     private static final int STATE_PLAYING = 1;
     private static final int STATE_GAMEOVER = 2;
     private int gameState = STATE_MENU;
+
+    private static final double SPEED_MULTIPLIER = 1.15; // 整体提速 15%
 
     // 坦克类型
     private static final int TANK_NORMAL = 0;
@@ -234,11 +235,12 @@ public class Launcher extends Application {
     private int selectedTankType = TANK_NORMAL;
     private int score = 0;
     private int level = 1;
-    private int showLevelTimer = 0;
+    private int playerLives = 3;
+    private double showLevelTimer = 0;
 
     // 开局倒计时变量
     private boolean isCountingDown = false;
-    private int countdownTimer = 0;
+    private double countdownTimer = 0;
 
     private PlayerTank player;
     private ArrayList<EnemyTank> enemies = new ArrayList<>();
@@ -250,7 +252,7 @@ public class Launcher extends Application {
     // 玩家火炮落弹任务队列
     class PlayerArtilleryStrike {
         double targetX, targetY;
-        int remainingFrames;
+        double remainingFrames;
         double strikeRadius;
 
         public PlayerArtilleryStrike(double tx, double ty, int frames, double radius) {
@@ -272,8 +274,10 @@ public class Launcher extends Application {
     private long lastShieldSpawnTime = 0;
 
     // 空中支援控制变量
-    private int airstrikeCooldownTimer = 0;
+    private double airstrikeCooldownTimer = 0;
     private static final int AIRSTRIKE_CD_MAX = 900;
+
+    private long lastFrameNanos = 0;
 
     private Canvas canvas;
 
@@ -310,8 +314,11 @@ public class Launcher extends Application {
         AnimationTimer gameLoop = new AnimationTimer() {
             @Override
             public void handle(long now) {
+                double delta = (lastFrameNanos == 0) ? 1.0
+                        : Math.min((now - lastFrameNanos) / 1_000_000_000.0 * 60.0, 3.0);
+                lastFrameNanos = now;
                 if (gameState == STATE_PLAYING) {
-                    updateGame();
+                    updateGame(delta);
                 }
                 render(gc);
             }
@@ -360,6 +367,7 @@ public class Launcher extends Application {
         if (resetScoreAndLevel) {
             score = 0;
             level = 1;
+            playerLives = 3;
         }
         showLevelTimer = 90;
         airstrikeCooldownTimer = 0;
@@ -519,11 +527,11 @@ public class Launcher extends Application {
         return (u >= 0 && u <= 1 && v >= 0 && v <= 1);
     }
 
-    private void updateGame() {
-        if (showLevelTimer > 0) showLevelTimer--;
+    private void updateGame(double delta) {
+        if (showLevelTimer > 0) showLevelTimer -= delta;
 
         if (isCountingDown) {
-            countdownTimer--;
+            countdownTimer -= delta;
             if (countdownTimer <= 0) {
                 isCountingDown = false;
             }
@@ -531,13 +539,13 @@ public class Launcher extends Application {
         }
 
         if (airstrikeCooldownTimer > 0) {
-            airstrikeCooldownTimer--;
+            airstrikeCooldownTimer -= delta;
         }
 
         Iterator<Airstrike> airIter = airstrikes.iterator();
         while (airIter.hasNext()) {
             Airstrike air = airIter.next();
-            air.update();
+            air.update(delta);
             if (air.isExploded) {
                 triggerAirstrikeDamage(air.x, air.y, air.radius);
                 explosions.add(new ExplosionEffect(air.x, air.y));
@@ -549,7 +557,7 @@ public class Launcher extends Application {
         Iterator<PlayerArtilleryStrike> strikeIter = playerStrikes.iterator();
         while (strikeIter.hasNext()) {
             PlayerArtilleryStrike strike = strikeIter.next();
-            strike.remainingFrames--;
+            strike.remainingFrames -= delta;
             if (strike.remainingFrames <= 0) {
                 explosions.add(new ExplosionEffect(strike.targetX, strike.targetY));
                 triggerDynamicExplosionDamage(strike.targetX, strike.targetY, strike.strikeRadius);
@@ -558,19 +566,19 @@ public class Launcher extends Application {
         }
 
         double dx = 0, dy = 0;
-        if (keys[87]) dy -= 3;
-        if (keys[83]) dy += 3;
-        if (keys[65]) dx -= 3;
-        if (keys[68]) dx += 3;
+        if (keys[87]) dy -= 3 * SPEED_MULTIPLIER * delta;
+        if (keys[83]) dy += 3 * SPEED_MULTIPLIER * delta;
+        if (keys[65]) dx -= 3 * SPEED_MULTIPLIER * delta;
+        if (keys[68]) dx += 3 * SPEED_MULTIPLIER * delta;
         if (dx != 0 || dy != 0) {
             player.move(dx, dy, walls);
         }
-        player.update();
+        player.update(delta);
         player.angle = Math.atan2(mousePoint.getY() - player.y, mousePoint.getX() - player.x);
 
         long nowTime = System.currentTimeMillis();
         if (nowTime - lastShieldSpawnTime > 10000 && shields.size() < 2) {
-            if (random.nextInt(100) < 3) {
+            if (random.nextDouble() < 0.03 * delta) {
                 int sx = random.nextInt(WIDTH - 100) + 50;
                 int sy = random.nextInt(HEIGHT - 150) + 50;
                 if (!isCollidingWithWalls(sx, sy, 20)) {
@@ -590,14 +598,14 @@ public class Launcher extends Application {
         }
 
         for (EnemyTank enemy : enemies) {
-            enemy.updateAI(player, bullets, walls);
-            enemy.update();
+            enemy.updateAI(player, bullets, walls, delta);
+            enemy.update(delta);
         }
 
         Iterator<Bullet> bIter = bullets.iterator();
         while (bIter.hasNext()) {
             Bullet b = bIter.next();
-            b.move(walls);
+            b.move(walls, delta);
             if (!b.isActive) {
                 if (b.type == TANK_ARTILLERY) {
                     explosions.add(new ExplosionEffect(b.x, b.y));
@@ -608,9 +616,7 @@ public class Launcher extends Application {
             }
 
             if (b.isEnemyBullet && getDistance(b.x, b.y, player.x, player.y) < 20) {
-                if (player.invincibleTimer <= 0) {
-                    gameState = STATE_GAMEOVER;
-                }
+                damagePlayer();
                 bIter.remove();
                 continue;
             }
@@ -656,13 +662,23 @@ public class Launcher extends Application {
         Iterator<ExplosionEffect> expIter = explosions.iterator();
         while (expIter.hasNext()) {
             ExplosionEffect exp = expIter.next();
-            exp.update();
+            exp.update(delta);
             if (!exp.active) expIter.remove();
         }
 
-        if (enemies.isEmpty() && showLevelTimer == 0) {
+        if (enemies.isEmpty() && showLevelTimer <= 0) {
             level++;
             startNewLevel(false);
+        }
+    }
+
+    private void damagePlayer() {
+        if (player.invincibleTimer > 0) return;
+        playerLives--;
+        if (playerLives <= 0) {
+            gameState = STATE_GAMEOVER;
+        } else {
+            player.invincibleTimer = 90; // 短暂无敌，避免连续判定
         }
     }
 
@@ -672,9 +688,7 @@ public class Launcher extends Application {
 
     private void triggerDynamicExplosionDamage(double ex, double ey, double radius) {
         if (getDistance(ex, ey, player.x, player.y) < radius) {
-            if (player.invincibleTimer <= 0) {
-                gameState = STATE_GAMEOVER;
-            }
+            damagePlayer();
         }
 
         Iterator<EnemyTank> eIter = enemies.iterator();
@@ -702,9 +716,7 @@ public class Launcher extends Application {
 
     private void triggerAirstrikeDamage(double ax, double ay, double radius) {
         if (getDistance(ax, ay, player.x, player.y) < radius) {
-            if (player.invincibleTimer <= 0) {
-                gameState = STATE_GAMEOVER;
-            }
+            damagePlayer();
         }
 
         Iterator<EnemyTank> eIter = enemies.iterator();
@@ -903,6 +915,15 @@ public class Launcher extends Application {
             }
             gc.restore();
 
+            if (enemy instanceof BossTank) {
+                BossTank bTank = (BossTank) enemy;
+                gc.setFill(Color.RED);
+                gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 16));
+                StringBuilder bossHearts = new StringBuilder();
+                for (int i = 0; i < bTank.hp; i++) bossHearts.append("♥");
+                gc.fillText(bossHearts.toString(), enemy.x - 25, enemy.y - 35);
+            }
+
             if (enemy.type == TANK_ARTILLERY && enemy.isCharging) {
                 gc.setStroke(Color.RED);
                 gc.setLineWidth(1);
@@ -956,6 +977,11 @@ public class Launcher extends Application {
         gc.fillText("我的得分: " + score, 40, HEIGHT - 40);
         gc.fillText("当前关卡: " + level, WIDTH - 160, HEIGHT - 40);
 
+        gc.setFill(Color.RED);
+        StringBuilder hearts = new StringBuilder();
+        for (int i = 0; i < playerLives; i++) hearts.append("♥");
+        gc.fillText(hearts.toString(), 40, HEIGHT - 18);
+
         if (player.invincibleTimer > 0) {
             gc.setFill(Color.GOLD);
             gc.fillText(String.format("【无敌护盾激活】 剩余时间: %.1fs", player.invincibleTimer / 60.0), 220, HEIGHT - 40);
@@ -981,8 +1007,8 @@ public class Launcher extends Application {
             gc.save();
             gc.setTextBaseline(VPos.CENTER);
             if (countdownTimer > 30) {
-                int secondsLeft = (countdownTimer - 31) / 60 + 1;
-                int frameInSecond = (countdownTimer - 31) % 60;
+                int secondsLeft = (int)((countdownTimer - 31) / 60) + 1;
+                double frameInSecond = (countdownTimer - 31) % 60;
                 double scale = 1.0 + (frameInSecond / 60.0) * 0.6;
 
                 gc.setFont(Font.font("Impact", FontWeight.BOLD, 90 * scale));
@@ -1030,7 +1056,7 @@ public class Launcher extends Application {
     class Airstrike {
         double x, y;
         double radius = 110;
-        int timer = 180;
+        double timer = 180;
         boolean isExploded = false;
 
         public Airstrike(double x, double y) {
@@ -1038,9 +1064,9 @@ public class Launcher extends Application {
             this.y = y;
         }
 
-        public void update() {
+        public void update(double delta) {
             if (isExploded) return;
-            timer--;
+            timer -= delta;
             if (timer <= 0) {
                 isExploded = true;
             }
@@ -1054,12 +1080,12 @@ public class Launcher extends Application {
         Color color;
         int size = 34;
 
-        int cooldown = 0;
+        double cooldown = 0;
         int burstCount = 0;
-        int burstCoolDown = 0;
+        double burstCoolDown = 0;
 
         boolean isCharging = false;
-        int chargeTimer = 0;
+        double chargeTimer = 0;
         double chargeTargetX, chargeTargetY;
 
         public Tank(double x, double y, int type) {
@@ -1071,11 +1097,11 @@ public class Launcher extends Application {
             else this.color = Color.BLUE;
         }
 
-        public void update() {
-            if (cooldown > 0) cooldown--;
-            if (burstCoolDown > 0) burstCoolDown--;
+        public void update(double delta) {
+            if (cooldown > 0) cooldown -= delta;
+            if (burstCoolDown > 0) burstCoolDown -= delta;
             if (isCharging) {
-                chargeTimer--;
+                chargeTimer -= delta;
                 if (chargeTimer <= 0) {
                     isCharging = false;
                     fireArtilleryBullet();
@@ -1097,7 +1123,7 @@ public class Launcher extends Application {
 
         private void fireArtilleryBullet() {
             double angleToTarget = Math.atan2(chargeTargetY - y, chargeTargetX - x);
-            Bullet b = new Bullet(x, y, angleToTarget, false, TANK_ARTILLERY, true, 26);
+            Bullet b = new Bullet(x, y, angleToTarget, false, TANK_ARTILLERY, true, (int)(26 * SPEED_MULTIPLIER));
             b.isEnemyBullet = (this instanceof EnemyTank);
             b.color = Color.BLUE;
             Launcher.this.bullets.add(b);
@@ -1105,17 +1131,17 @@ public class Launcher extends Application {
     }
 
     class PlayerTank extends Tank {
-        int invincibleTimer = 0;
+        double invincibleTimer = 0;
 
         public PlayerTank(double x, double y, int type) {
             super(x, y, type);
         }
 
         @Override
-        public void update() {
-            super.update();
+        public void update(double delta) {
+            super.update(delta);
             if (invincibleTimer > 0) {
-                invincibleTimer--;
+                invincibleTimer -= delta;
             }
         }
 
@@ -1125,7 +1151,7 @@ public class Launcher extends Application {
             if (type == TANK_NORMAL) {
                 if (burstCoolDown > 0) return;
                 if (cooldown <= 0) {
-                    Bullet b = new Bullet(x, y, angle, true, TANK_NORMAL, true, 6);
+                    Bullet b = new Bullet(x, y, angle, true, TANK_NORMAL, true, (int)(6 * SPEED_MULTIPLIER));
                     b.isEnemyBullet = false;
                     b.color = Color.RED;
                     bList.add(b);
@@ -1140,7 +1166,7 @@ public class Launcher extends Application {
                 if (cooldown <= 0) {
                     double startAngle = angle - 0.3;
                     for (int i = 0; i < 5; i++) {
-                        Bullet b = new Bullet(x, y, startAngle + (i * 0.15), false, TANK_SHOTGUN, true, 6);
+                        Bullet b = new Bullet(x, y, startAngle + (i * 0.15), false, TANK_SHOTGUN, true, (int)(6 * SPEED_MULTIPLIER));
                         b.isEnemyBullet = false;
                         b.color = Color.YELLOW;
                         b.life = 25;
@@ -1179,7 +1205,7 @@ public class Launcher extends Application {
         boolean isEnemyBullet = false;
         Color color = Color.RED;
         int radius = 5;
-        int life = 300;
+        double life = 300;
         boolean isActive = true;
         int speed;
         boolean isHarmful;
@@ -1195,7 +1221,7 @@ public class Launcher extends Application {
             this.vy = Math.sin(angle) * speed;
         }
 
-        public void move(ArrayList<Wall> walls) {
+        public void move(ArrayList<Wall> walls, double delta) {
             double actualVx = vx;
             double actualVy = vy;
 
@@ -1204,9 +1230,9 @@ public class Launcher extends Application {
                 actualVy *= 0.25;
             }
 
-            x += actualVx;
-            y += actualVy;
-            life--;
+            x += actualVx * delta;
+            y += actualVy * delta;
+            life -= delta;
             if (life <= 0) isActive = false;
             for (Wall w : walls) {
                 if (w.intersects(x - radius, y - radius, radius * 2, radius * 2)) {
@@ -1251,7 +1277,7 @@ public class Launcher extends Application {
 
     class ExplosionEffect {
         double x, y;
-        int timer = 90;
+        double timer = 90;
         boolean active = true;
 
         public ExplosionEffect(double x, double y) {
@@ -1259,8 +1285,8 @@ public class Launcher extends Application {
             this.y = y;
         }
 
-        public void update() {
-            timer--;
+        public void update(double delta) {
+            timer -= delta;
             if (timer <= 0) active = false;
         }
     }
