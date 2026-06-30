@@ -10,6 +10,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
+import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -332,7 +333,7 @@ public class Launcher extends Application {
 
         lastShieldSpawnTime = System.currentTimeMillis();
 
-        primaryStage.setTitle("坦克大战高级战略版 (JavaFX)");
+        primaryStage.setTitle("Tank Battle - Strategy Edition (JavaFX)");
         primaryStage.setScene(scene);
         primaryStage.setResizable(false);
         primaryStage.show();
@@ -807,9 +808,10 @@ public class Launcher extends Application {
         gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 45));
         gc.fillText("TANK BATTLE", WIDTH / 2.0 - 140, 60);
         gc.setFont(Font.font("Microsoft YaHei", FontWeight.NORMAL, 20));
-        gc.fillText("请选择你的坦克形态：", WIDTH / 2.0 - 100, 150);
+        gc.setTextAlign(TextAlignment.CENTER);
+        gc.fillText("Select Your Tank Type:", WIDTH / 2.0, 150);
         int[] selectXs = {WIDTH / 2 - 250, WIDTH / 2 - 30, WIDTH / 2 + 190};
-        String[] titles = {"普通坦克", "散弹坦克", "自行火炮"};
+        String[] titles = {"Normal Tank", "Shotgun Tank", "Artillery Tank"};
         Color[] colors = {Color.GREEN, Color.YELLOW, Color.BLUE};
         for (int i = 0; i < 3; i++) {
             if (selectedTankType == i) {
@@ -826,7 +828,7 @@ public class Launcher extends Application {
 
             gc.setFill(Color.WHITE);
             gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 18));
-            gc.fillText(titles[i], selectXs[i] - 10, 350);
+            gc.fillText(titles[i], selectXs[i] + 30, 350);
         }
 
         gc.setFill(Color.DARKGRAY);
@@ -836,7 +838,7 @@ public class Launcher extends Application {
         gc.strokeRect(WIDTH / 2.0 - 100, 460, 200, 60);
         gc.setFill(Color.WHITE);
         gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 24));
-        gc.fillText("开始游戏", WIDTH / 2.0 - 48, 475);
+        gc.fillText("Start Game", WIDTH / 2.0, 475);
         // Help button
         gc.setFill(Color.DARKBLUE);
         gc.fillOval(WIDTH - 70, 20, 40, 40);
@@ -846,8 +848,9 @@ public class Launcher extends Application {
         gc.strokeOval(WIDTH - 70, 20, 40, 40);
 
         gc.setFill(Color.WHITE);
-        gc.setFont(Font.font("Arial", FontWeight.BOLD, 24));
-        gc.fillText("?", WIDTH - 56, 24);
+        gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 24));
+        gc.fillText("?", WIDTH - 50, 24);
+        gc.setTextAlign(TextAlignment.LEFT);
     }
 
     private void drawHelp(GraphicsContext gc) {
@@ -857,10 +860,10 @@ public class Launcher extends Application {
         gc.setTextBaseline(VPos.TOP);
 
         gc.setFill(Color.WHITE);
-        gc.setFont(Font.font("Arial", FontWeight.BOLD, 42));
+        gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 42));
         gc.fillText("Game Introduction", WIDTH / 2.0 - 190, 60);
 
-        gc.setFont(Font.font("Arial", FontWeight.NORMAL, 22));
+        gc.setFont(Font.font("Microsoft YaHei", FontWeight.NORMAL, 22));
         gc.fillText("Objective:", 180, 150);
         gc.fillText("Control your tank, defeat all enemy tanks, and advance to the next stage.", 180, 185);
 
@@ -882,7 +885,7 @@ public class Launcher extends Application {
         gc.strokeRect(WIDTH / 2.0 - 100, 620, 200, 50);
 
         gc.setFill(Color.WHITE);
-        gc.setFont(Font.font("Arial", FontWeight.BOLD, 24));
+        gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 24));
         gc.fillText("Back", WIDTH / 2.0 - 28, 630);
     }
 
@@ -1043,8 +1046,8 @@ public class Launcher extends Application {
 
         gc.setFill(Color.WHITE);
         gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 18));
-        gc.fillText("我的得分: " + score, 40, HEIGHT - 40);
-        gc.fillText("当前关卡: " + level, WIDTH - 160, HEIGHT - 40);
+        gc.fillText("Score: " + score, 40, HEIGHT - 40);
+        gc.fillText("Level: " + level, WIDTH - 160, HEIGHT - 40);
 
         gc.setFill(Color.RED);
         StringBuilder hearts = new StringBuilder();
@@ -1053,17 +1056,17 @@ public class Launcher extends Application {
 
         if (player.invincibleTimer > 0) {
             gc.setFill(Color.GOLD);
-            gc.fillText(String.format("【无敌护盾激活】 剩余时间: %.1fs", player.invincibleTimer / 60.0), 220, HEIGHT - 40);
+            gc.fillText(String.format("[Shield Active] Time Left: %.1fs", player.invincibleTimer / 60.0), 220, HEIGHT - 40);
         } else if (!airstrikes.isEmpty()) {
             gc.setFill(Color.RED);
-            gc.fillText("【再次按下 1 键】 -> 全场立刻引爆空中空袭！", 220, HEIGHT - 40);
+            gc.fillText("[Press 1 Again] -> Detonate al  airstrikes now!", 220, HEIGHT - 40);
         } else if (airstrikeCooldownTimer > 0) {
             double remainSeconds = airstrikeCooldownTimer / 60.0;
             gc.setFill(Color.rgb(255, 165, 0));
-            gc.fillText(String.format("【空中支援装填中】 剩余时间: %.1fs", remainSeconds), 220, HEIGHT - 40);
+            gc.fillText(String.format("[Air Support Reloading] Time Left: %.1fs", remainSeconds), 220, HEIGHT - 40);
         } else {
             gc.setFill(Color.GREENYELLOW);
-            gc.fillText("【1 键呼叫空中支援】 状态：就绪 (无限制次)", 220, HEIGHT - 40);
+            gc.fillText("[Press 1 Call Air Support] Air Support Ready", 220, HEIGHT - 40);
         }
 
         if (showLevelTimer > 0) {
@@ -1103,11 +1106,11 @@ public class Launcher extends Application {
         gc.getCanvas().setFocusTraversable(true);
         gc.setFill(Color.RED);
         gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 50));
-        gc.fillText("你已被击败！", WIDTH / 2.0 - 150, HEIGHT / 2.0 - 120);
+        gc.fillText("Game Over！", WIDTH / 2.0 - 170, HEIGHT / 2.0 - 120);
 
         gc.setFill(Color.WHITE);
         gc.setFont(Font.font("Microsoft YaHei", FontWeight.NORMAL, 24));
-        gc.fillText("最终得分: " + score + "   达到关卡: " + level, WIDTH / 2.0 - 180, HEIGHT / 2.0 - 40);
+        gc.fillText("Final Score: " + score + "   Level Reached: " + level, WIDTH / 2.0 - 210, HEIGHT / 2.0 - 40);
         gc.setFill(Color.GRAY);
         gc.fillRect(WIDTH / 2.0 - 40, HEIGHT / 2.0 + 50, 80, 70);
 
