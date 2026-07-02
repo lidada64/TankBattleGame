@@ -3,7 +3,6 @@ package tankgame;
 import javafx.scene.media.AudioClip;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
-import javafx.util.Duration;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -73,7 +72,7 @@ public class SoundManager {
         List<String> cands = new ArrayList<>();
         cands.add("assets/sound/");
         cands.add("TankBattleGame-master/assets/sound/");
-        cands.add("../assets/sound/");
+        cands.add("/sound/");
         cands.add("../TankBattleGame-master/assets/sound/");
 
         // 相对于编译产物/jar 的位置（与运行时工作目录无关，最稳）

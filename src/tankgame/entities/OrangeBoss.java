@@ -140,19 +140,67 @@ public class OrangeBoss extends EnemyTank {
             gc.setLineDashes(null);
         }
 
+        // ==================== 🔥 UI 终极升级：烈焰风暴粒子喷涌 (OrangeBoss 专属版) ====================
         if (flameActive) {
-            gc.setFill(Color.rgb(255, 165, 0, 0.5));
             double[][] corners = getFlameCorners();
-            double[] xs = new double[4];
-            double[] ys = new double[4];
-            for (int i = 0; i < 4; i++) {
-                xs[i] = corners[i][0];
-                ys[i] = corners[i][1];
-            }
+            // 拿到四个角的绝对坐标：
+            // corners[0] 和 corners[3] 是靠近 Boss 嘴边的起点
+            // corners[1] 和 corners[2] 是喷火区域的最远端终点
+            double startX = (corners[0][0] + corners[3][0]) / 2.0;
+            double startY = (corners[0][1] + corners[3][1]) / 2.0;
+
+            // 1. 【底色强光晕】利用你原有的 4 个顶点画一层极淡的渐变火焰底色，烘托空气受热变形的高温感
+            gc.save();
+            // 设置一层微弱的红橙色基础力场
+            gc.setFill(Color.rgb(255, 100, 0, 0.12));
+            double[] xs = {corners[0][0], corners[1][0], corners[2][0], corners[3][0]};
+            double[] ys = {corners[0][1], corners[1][1], corners[2][1], corners[3][1]};
             gc.fillPolygon(xs, ys, 4);
-            gc.setStroke(Color.rgb(255, 100, 0, 0.8));
-            gc.setLineWidth(2);
-            gc.strokePolygon(xs, ys, 4);
+            gc.restore();
+
+            // 2. 【高密度动态喷涌火苗粒子群】（35颗粒子，完全利用数学公式，无需添加额外变量）
+            for (int i = 0; i < 35; i++) {
+                // 每颗火苗独特的喷射速度和生命周期比例 factor
+                double speedFactor = 0.5 + (i % 4) * 0.25;
+                // 粒子在火焰长度上的推进比例（0.0 到 1.0）
+                double progress = (Launcher.animTick * 0.015 * speedFactor + i * 0.03) % 1.0;
+
+                // 核心插值算法：让粒子从起点(startX, startY) 完美沿着 Boss 面向的扇形推演到远端
+                double targetX = corners[0][0] + (corners[1][0] - corners[0][0]) * progress;
+                double targetY = corners[0][1] + (corners[1][1] - corners[0][1]) * progress;
+                double targetX2 = corners[3][0] + (corners[2][0] - corners[3][0]) * progress;
+                double targetY2 = corners[3][1] + (corners[2][1] - corners[3][1]) * progress;
+
+                // 在上下两条边界线之间随机/交错散开，并且加上高频火苗剧烈抖动
+                double wave = Math.sin(Launcher.animTick * 0.3 + i);
+                double ratio = (i % 5) / 5.0; // 粒子在宽度方向的分散度
+                double pX = targetX + (targetX2 - targetX) * ratio + Math.cos(Launcher.animTick * 0.1 + i) * 2.0;
+                double pY = targetY + (targetY2 - targetY) * ratio + wave * 3.5; // 火苗跳动
+
+                // 3. 【三阶段高温渐变色控制】
+                double age = progress; // 离 Boss 的距离百分比
+                double pAlpha = Math.sin(age * Math.PI) * 0.95; // 喷出时淡入，末端平滑淡出
+
+                if (pAlpha > 0) {
+                    if (age < 0.25) {
+                        // A. 【核心超高温区】：纯白金色粒子，个体较小，速度极快
+                        gc.setFill(Color.color(1.0, 1.0, 0.8, pAlpha));
+                        double size = 2.0 + (i % 2);
+                        gc.fillRect(pX - size/2.0, pY - size/2.0, size, size);
+                    } else if (age < 0.7) {
+                        // B. 【中段炽热区】：爆裂的亮橙黄色，粒子体积最大
+                        gc.setFill(Color.color(1.0, 0.55, 0.0, pAlpha));
+                        double size = 4.5 + (i % 3);
+                        gc.fillRect(pX - size/2.0, pY - size/2.0, size, size);
+                    } else {
+                        // C. 【尾部消散区】：暗红色的余烬粒子，即将消散
+                        gc.setFill(Color.color(0.85, 0.1, 0.0, pAlpha * 0.6));
+                        double size = 1.5 + (i % 2);
+                        gc.fillRect(pX - size/2.0, pY - size/2.0, size, size);
+                    }
+                }
+            }
         }
+        // ============================================================================================
     }
 }
