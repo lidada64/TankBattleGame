@@ -1,3 +1,5 @@
+package tankgame;
+
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.geometry.Point2D;
@@ -16,408 +18,23 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Random;
 
+import tankgame.entities.BossTank;
+import tankgame.entities.Bullet;
+import tankgame.entities.EnemyTank;
+import tankgame.entities.OrangeBoss;
+import tankgame.entities.PinkBoss;
+import tankgame.entities.PlayerArtilleryStrike;
+import tankgame.entities.PlayerTank;
+import tankgame.entities.SafeZone;
+import tankgame.entities.ShieldItem;
+import tankgame.entities.Tank;
+import tankgame.entities.Wall;
+import tankgame.effects.DelayedBoom;
+import tankgame.effects.ExplosionEffect;
+import tankgame.effects.FloatText;
+import tankgame.effects.Particle;
+
 public class Launcher extends Application {
-
-    // ========== 内部类：敌方坦克 ==========
-    class EnemyTank extends Tank {
-        protected int hp = 1;
-        protected int maxHp = 1;              // Boss血条用
-        protected double displayHp = -1;      // 血条缓降的显示值(懒初始化为hp)
-        protected double hitShakeTimer = 0;   // 受击抖动剩余帧
-        private int aiState = 0;
-        private double stateTimer = 0;
-        @SuppressWarnings("unused")
-        private double escapeAngle = 0;
-
-        public EnemyTank(double x, double y, int type) {
-            super(x, y, type);
-            this.color = Color.GREEN;
-            this.spawnTimer = 16; this.spawnMax = 16;   // 出场弹入动画
-        }
-
-        @Override
-        public void move(double dx, double dy, ArrayList<Wall> walls) {
-            if (isCharging) return;
-            double targetNextX = x + dx;
-            double targetNextY = y + dy;
-
-            boolean hitWallX = isCollidingWithWalls(targetNextX, y, size);
-            boolean hitWallY = isCollidingWithWalls(x, targetNextY, size);
-            boolean hitEnemyX = isCollidingWithOtherEnemies(this, targetNextX, y);
-            boolean hitEnemyY = isCollidingWithOtherEnemies(this, x, targetNextY);
-
-            if (!hitWallX && !hitEnemyX) {
-                x = targetNextX;
-            } else if (hitWallX && !hitEnemyX) {
-                double slideY = (dy != 0) ? dy : (random.nextBoolean() ? 1.5 * dt : -1.5 * dt);
-                if (!isCollidingWithWalls(x, y + slideY, size)) y += slideY;
-            }
-
-            if (!hitWallY && !hitEnemyY) {
-                y = targetNextY;
-            } else if (hitWallY && !hitEnemyY) {
-                double slideX = (dx != 0) ? dx : (random.nextBoolean() ? 1.5 * dt : -1.5 * dt);
-                if (!isCollidingWithWalls(x + slideX, y, size)) x += slideX;
-            }
-
-            if ((hitWallX || hitEnemyX) && (hitWallY || hitEnemyY)) {
-                if (aiState != 1) {
-                    aiState = 1;
-                    stateTimer = 90;
-                    escapeAngle = Math.atan2(-dy, -dx) + (random.nextDouble() * 1.0 - 0.5);
-                }
-            }
-        }
-
-        public void updateAI(PlayerTank player, ArrayList<Bullet> bList, ArrayList<Wall> wList) {
-            if (player == null) return;
-            if (this instanceof BossTank && ((BossTank) this).isTeleporting) {
-                return;
-            }
-
-            double distToPlayer = getDistance(x, y, player.x, player.y);
-            stateTimer -= dt;
-            Bullet threat = null;
-            for (Bullet b : bList) {
-                if (!b.isEnemyBullet && getDistance(x, y, b.x, b.y) < 150) {
-                    threat = b;
-                    break;
-                }
-            }
-
-            if (threat != null && stateTimer <= 0) {
-                aiState = 1;
-                stateTimer = 40;
-            } else if (stateTimer <= 0) {
-                aiState = 0;
-                stateTimer = random.nextInt(50) + 30;
-            }
-
-            double baseMoveSpeed = (aiState == 0) ? 1.0 * SPEED_MULTIPLIER * dt : 1.6 * SPEED_MULTIPLIER * dt;
-
-            if (player.type == TANK_ARTILLERY && player.isCharging) {
-                baseMoveSpeed *= 0.25;
-            }
-
-            double mx = 0, my = 0;
-            if (aiState == 0) {
-                mx = (player.x > x) ? baseMoveSpeed : -baseMoveSpeed;
-                my = (player.y > y) ? baseMoveSpeed : -baseMoveSpeed;
-                angle = Math.atan2(player.y - y, player.x - x);
-            } else {
-                mx = (player.y > y) ? -baseMoveSpeed : baseMoveSpeed;
-                my = (player.x > x) ? baseMoveSpeed : -baseMoveSpeed;
-            }
-
-            if (getDistance(x + mx, y + my, player.x, player.y) > 45) {
-                move(mx, my, wList);
-            }
-
-            if (!isCharging && cooldown <= 0 && distToPlayer < 500 && random.nextDouble() < 0.04 * dt) {
-                enemyFire(bList, player);
-            }
-        }
-
-        private void enemyFire(ArrayList<Bullet> bList, PlayerTank p) {
-            double enemyAngle = Math.atan2(p.y - y, p.x - x);
-            if (type == TANK_NORMAL) {
-                Bullet b = new Bullet(x, y, enemyAngle, true, TANK_NORMAL, true, 6);
-                b.isEnemyBullet = true;
-                b.color = this.color;
-                bList.add(b);
-                if (sound != null) sound.play("shoot_normal", 0.3);
-                muzzleTimer = 4; recoil = 4; spawnCasing(x, y, angle);
-                cooldown = 45;
-            } else if (type == TANK_SHOTGUN) {
-                double sAngle = enemyAngle - 0.3;
-                for (int i = 0; i < 5; i++) {
-                    Bullet b = new Bullet(x, y, sAngle + (i * 0.15), false, TANK_SHOTGUN, true, 6);
-                    b.isEnemyBullet = true;
-                    b.color = this.color;
-                    b.life = 25;
-                    bList.add(b);
-                }
-                if (sound != null) sound.play("shoot_shotgun", 0.3);
-                muzzleTimer = 5; recoil = 6; spawnCasing(x, y, angle);
-                cooldown = 85;
-            } else if (type == TANK_ARTILLERY) {
-                isCharging = true;
-                chargeTimer = 90;
-                chargeTargetX = p.x;
-                chargeTargetY = p.y;
-                if (sound != null) sound.play("charge", 0.25);
-                cooldown = 160;
-            }
-        }
-    }
-
-    // ========== Boss：粉色 ==========
-    class PinkBoss extends EnemyTank {
-        public PinkBoss(double x, double y) {
-            super(x, y, TANK_NORMAL);
-            this.color = Color.PINK;
-            this.size = 50;
-            this.hp = 5;
-            this.maxHp = 5;
-            this.spawnTimer = 40; this.spawnMax = 40;   // Boss 入场放大更慢更夸张
-        }
-
-        @Override
-        public void updateAI(PlayerTank player, ArrayList<Bullet> bList, ArrayList<Wall> wList) {
-            if (player == null) return;
-
-            double baseMoveSpeed = 1.2 * dt;
-            double mx = (player.x > x) ? baseMoveSpeed : -baseMoveSpeed;
-            double my = (player.y > y) ? baseMoveSpeed : -baseMoveSpeed;
-            if (getDistance(x + mx, y + my, player.x, player.y) > 45) {
-                move(mx, my, wList);
-            }
-            angle = Math.atan2(player.y - y, player.x - x);
-
-            if (cooldown <= 0) {
-                double[] baseAngles = {0, Math.PI/4, Math.PI/2, 3*Math.PI/4,
-                        Math.PI, 5*Math.PI/4, 3*Math.PI/2, 7*Math.PI/4};
-                for (double base : baseAngles) {
-                    for (int i = 0; i < 5; i++) {
-                        double offset = (i - 2) * 0.05;
-                        double angle = base + offset;
-                        Bullet b = new Bullet(x, y, angle, false, TANK_NORMAL, true, 3);
-                        b.isEnemyBullet = true;
-                        b.color = Color.PINK;
-                        b.life = 180;
-                        bList.add(b);
-                    }
-                }
-                if (sound != null) sound.play("boss_fire");
-                muzzleTimer = 6; shakeMag = Math.max(shakeMag, 5);
-                cooldown = 180;
-            }
-        }
-    }
-
-    // ========== Boss：橙色 ==========
-    class OrangeBoss extends EnemyTank {
-        boolean hasShield = true;
-        double shieldCooldown = 720;
-        double flameCooldown = 0;
-        double flameWarningTimer = 0;
-        boolean flameActive = false;
-        double flameDuration = 0;
-        double flameLength = 270;
-        double flameWidth;
-        double flameDamageTimer = 0;
-
-        public OrangeBoss(double x, double y) {
-            super(x, y, TANK_NORMAL);
-            this.color = Color.ORANGE;
-            this.size = 50;
-            this.hp = 5;
-            this.maxHp = 5;
-            this.flameWidth = this.size;
-            hasShield = true;
-            shieldCooldown = 720;
-            this.spawnTimer = 40; this.spawnMax = 40;   // Boss 入场放大更慢更夸张
-        }
-
-        @Override
-        public void update() {
-            super.update();
-
-            if (!hasShield) {
-                shieldCooldown -= dt;
-                if (shieldCooldown <= 0) {
-                    hasShield = true;
-                    shieldCooldown = 720;
-                }
-            }
-
-            if (flameCooldown > 0) {
-                flameCooldown -= dt;
-                if (flameCooldown < 0) flameCooldown = 0;
-            }
-
-            if (flameWarningTimer > 0) {
-                flameWarningTimer -= dt;
-                if (flameWarningTimer <= 0) {
-                    flameWarningTimer = 0;
-                    flameActive = true;
-                    flameDuration = 120;
-                }
-            }
-
-            if (flameActive) {
-                flameDuration -= dt;
-                if (flameDuration <= 0) {
-                    flameActive = false;
-                    flameCooldown = 180;
-                }
-            }
-
-            if (flameActive && player != null && isPointInFlameRect(player.x, player.y)) {
-                flameDamageTimer += dt;
-                if (flameDamageTimer >= 30) {
-                    flameDamageTimer = 0;
-                    if (player.invincibleTimer <= 0) {
-                        player.takeDamage(1);
-                    }
-                }
-            } else {
-                flameDamageTimer = 0;
-            }
-
-            if (flameCooldown == 0 && flameWarningTimer == 0 && !flameActive) {
-                flameWarningTimer = 90;
-            }
-        }
-
-        private boolean isPointInFlameRect(double px, double py) {
-            double dx = px - x;
-            double dy = py - y;
-            double cos = Math.cos(-angle);
-            double sin = Math.sin(-angle);
-            double localX = dx * cos - dy * sin;
-            double localY = dx * sin + dy * cos;
-            return (localX >= 0 && localX <= flameLength &&
-                    Math.abs(localY) <= flameWidth / 2);
-        }
-
-        public double[][] getFlameCorners() {
-            double halfLen = flameLength / 2;
-            double halfWid = flameWidth / 2;
-            double cos = Math.cos(angle);
-            double sin = Math.sin(angle);
-            double cx = x + cos * halfLen;
-            double cy = y + sin * halfLen;
-            double[][] corners = new double[4][2];
-            double[][] offsets = {
-                    {-halfLen, -halfWid}, { halfLen, -halfWid},
-                    { halfLen,  halfWid}, {-halfLen,  halfWid}
-            };
-            for (int i = 0; i < 4; i++) {
-                double offX = offsets[i][0];
-                double offY = offsets[i][1];
-                corners[i][0] = cx + offX * cos - offY * sin;
-                corners[i][1] = cy + offX * sin + offY * cos;
-            }
-            return corners;
-        }
-
-        public void draw(GraphicsContext gc) {
-            if (hasShield) {
-                gc.setStroke(Color.CYAN);
-                gc.setLineWidth(3);
-                gc.strokeOval(x - 35, y - 35, 70, 70);
-                gc.setStroke(Color.rgb(0, 255, 255, 0.3));
-                gc.setLineWidth(1);
-                gc.strokeOval(x - 40, y - 40, 80, 80);
-            }
-
-            if (flameWarningTimer > 0) {
-                gc.setStroke(Color.RED);
-                gc.setLineWidth(2);
-                gc.setLineDashes(6);
-                double[][] corners = getFlameCorners();
-                double[] xs = new double[5];
-                double[] ys = new double[5];
-                for (int i = 0; i < 4; i++) {
-                    xs[i] = corners[i][0];
-                    ys[i] = corners[i][1];
-                }
-                xs[4] = xs[0];
-                ys[4] = ys[0];
-                gc.strokePolygon(xs, ys, 5);
-                gc.setLineDashes(null);
-            }
-
-            if (flameActive) {
-                gc.setFill(Color.rgb(255, 165, 0, 0.5));
-                double[][] corners = getFlameCorners();
-                double[] xs = new double[4];
-                double[] ys = new double[4];
-                for (int i = 0; i < 4; i++) {
-                    xs[i] = corners[i][0];
-                    ys[i] = corners[i][1];
-                }
-                gc.fillPolygon(xs, ys, 4);
-                gc.setStroke(Color.rgb(255, 100, 0, 0.8));
-                gc.setLineWidth(2);
-                gc.strokePolygon(xs, ys, 4);
-            }
-        }
-    }
-
-    // ========== Boss：红色（传送 + 散射） ==========
-    class BossTank extends EnemyTank {
-        double scatterTimer = 180;
-        double teleportCooldown = 240;
-        double teleportTimer = 0;
-        boolean isTeleporting = false;
-        double tpTargetX, tpTargetY;
-
-        public BossTank(double x, double y) {
-            super(x, y, TANK_NORMAL);
-            this.color = Color.RED;
-            this.size = 50;
-            this.hp = 5;
-            this.maxHp = 5;
-            this.spawnTimer = 40; this.spawnMax = 40;   // Boss 入场放大更慢更夸张
-        }
-
-        @Override
-        public void update() {
-            if (isTeleporting) {
-                teleportTimer -= dt;
-                if (teleportTimer <= 0) {
-                    this.x = tpTargetX;
-                    this.y = tpTargetY;
-                    this.isTeleporting = false;
-                    this.teleportCooldown = 240;
-                }
-                return;
-            }
-
-            super.update();
-            scatterTimer -= dt;
-            if (scatterTimer <= 0) {
-                fireScatterBullets();
-                scatterTimer = 180;
-            }
-
-            teleportCooldown -= dt;
-            if (teleportCooldown <= 0) {
-                startTeleport();
-            }
-        }
-
-        private void startTeleport() {
-            int attempts = 0;
-            double rx = this.x, ry = this.y;
-            while (attempts < 50) {
-                rx = random.nextInt(WIDTH - 200) + 100;
-                ry = random.nextInt(HEIGHT - 200) + 100;
-                if (!isCollidingWithWalls(rx, ry, this.size)) {
-                    break;
-                }
-                attempts++;
-            }
-            this.tpTargetX = rx;
-            this.tpTargetY = ry;
-            this.isTeleporting = true;
-            this.teleportTimer = 120;
-        }
-
-        private void fireScatterBullets() {
-            for (int i = 0; i < 8; i++) {
-                double angle = i * (Math.PI / 4);
-                Bullet b = new Bullet(x, y, angle, true, TANK_SHOTGUN, true, 3);
-                b.isEnemyBullet = true;
-                b.life = 180;
-                Launcher.this.bullets.add(b);
-            }
-            if (sound != null) sound.play("boss_fire");
-            muzzleTimer = 6; recoil = 6; shakeMag = Math.max(shakeMag, 5);
-        }
-    }
 
     // ========== 游戏状态常量 ==========
     private static final int STATE_MENU = 0;
@@ -427,9 +44,9 @@ public class Launcher extends Application {
     private static final int STATE_SELECT = 4;
 
     // 坦克类型
-    private static final int TANK_NORMAL = 0;
-    private static final int TANK_SHOTGUN = 1;
-    private static final int TANK_ARTILLERY = 2;
+    public static final int TANK_NORMAL = 0;
+    public static final int TANK_SHOTGUN = 1;
+    public static final int TANK_ARTILLERY = 2;
 
     public static final int WIDTH = 1000;
     public static final int HEIGHT = 700;
@@ -442,9 +59,9 @@ public class Launcher extends Application {
     private double countdownTimer = 0;
     private int gameState = STATE_MENU;
 
-    private PlayerTank player;
+    public PlayerTank player;
     private ArrayList<EnemyTank> enemies = new ArrayList<>();
-    private ArrayList<Bullet> bullets = new ArrayList<>();
+    public ArrayList<Bullet> bullets = new ArrayList<>();
     private ArrayList<Wall> walls = new ArrayList<>();
     private ArrayList<ShieldItem> shields = new ArrayList<>();
     private ArrayList<ExplosionEffect> explosions = new ArrayList<>();
@@ -453,35 +70,24 @@ public class Launcher extends Application {
     private ArrayList<Particle> particles = new ArrayList<>();      // 碎片/火花/火光/烟雾/扬尘/弹壳
     private ArrayList<FloatText> floatTexts = new ArrayList<>();    // 飘字（+1 / +5）
     private ArrayList<DelayedBoom> scheduledBooms = new ArrayList<>(); // 延时爆炸（Boss 连环爆）
-    private double shakeMag = 0;              // 屏幕震动强度
+    public double shakeMag = 0;               // 屏幕震动强度
     private double bossWarnTimer = 0;         // Boss 登场预警视觉计时
     private long animTick = 0;                // 全局动画时钟（呼吸/闪烁/履带）
     private double hitStop = 0;               // 命中顿帧：暂停 N 帧逻辑
     private double screenFlash = 0;           // 全屏染色强度（0~1）
     private Color screenFlashColor = Color.WHITE; // 全屏染色颜色
-    private boolean dying = false;            // 玩家阵亡演出中
+    public boolean dying = false;             // 玩家阵亡演出中
     private double dyingTimer = 0;            // 阵亡演出剩余帧
     private static final int MAX_PARTICLES = 600; // 粒子上限（性能兜底）
 
     // 音频管理器
-    private SoundManager sound;
+    public SoundManager sound;
 
     // ---------- Buff 系统 ----------
-    private int selectedBuff = 0;   // 0=无, 1=神佑, 2=工业革命, 3=制空权
+    public int selectedBuff = 0;    // 0=无, 1=神佑, 2=工业革命, 3=制空权
 
     // ---------- 神佑之地 ----------
-    class SafeZone {
-        double x, y, width, height;
-        boolean active = false;
-        double remaining = 0;
-        public SafeZone(double x, double y, double w, double h) {
-            this.x = x; this.y = y; this.width = w; this.height = h;
-        }
-        public boolean contains(double px, double py) {
-            return px >= x && px <= x + width && py >= y && py <= y + height;
-        }
-    }
-    private SafeZone safeZone = null;
+    public SafeZone safeZone = null;
     private int safeZoneState = 0;          // 0=冷却, 1=激活
     private double safeZoneTimer = 0;
     private static final int SAFE_ZONE_SIZE = 150;
@@ -502,17 +108,7 @@ public class Launcher extends Application {
     private double airstrikeCooldown = 0;
 
     // 玩家火炮打击
-    class PlayerArtilleryStrike {
-        double targetX, targetY;
-        double remainingFrames;
-        double strikeRadius;
-        public PlayerArtilleryStrike(double tx, double ty, int frames, double radius) {
-            this.targetX = tx; this.targetY = ty;
-            this.remainingFrames = frames;
-            this.strikeRadius = radius;
-        }
-    }
-    private ArrayList<PlayerArtilleryStrike> playerStrikes = new ArrayList<>();
+    public ArrayList<PlayerArtilleryStrike> playerStrikes = new ArrayList<>();
 
     // ---------- Boss后备队列 ----------
     private ArrayList<EnemyTank> bossQueue = new ArrayList<>();
@@ -520,14 +116,14 @@ public class Launcher extends Application {
     // 输入
     private boolean[] keys = new boolean[256];
     private Point2D mousePoint = new Point2D(0, 0);
-    private Random random = new Random();
+    public Random random = new Random();
     private long lastShieldSpawnTime = 0;
     private Canvas canvas;
 
     // ---------- 帧率无关的变步长循环：逐帧 delta，速度不随帧率变化，且支持高刷(165fps) ----------
     private long lastFrameNanos = 0;
-    private double dt = 1.0;                                               // 帧增量，1.0 = 一个 60Hz 步
-    private static final double SPEED_MULTIPLIER = 1.3;                    // 整体移动提速 30%
+    public double dt = 1.0;                                                // 帧增量，1.0 = 一个 60Hz 步
+    public static final double SPEED_MULTIPLIER = 1.3;                     // 整体移动提速 30%
 
     public static void main(String[] args) {
         // 解除 JavaFX 默认 60fps 上限，让 AnimationTimer 按高刷新率(如165Hz)推进
@@ -671,7 +267,7 @@ public class Launcher extends Application {
             px += 15;
             if (px > WIDTH - 100) { px = 100; py += 15; }
         }
-        player = new PlayerTank(px, py, selectedTankType);
+        player = new PlayerTank(this, px, py, selectedTankType);
         player.invincibleTimer = 300;
         player.health = 3;
 
@@ -703,9 +299,9 @@ public class Launcher extends Application {
                         continue;
                     }
 
-                    if (bossType == 0) boss = new BossTank(startX, startY);
-                    else if (bossType == 1) boss = new PinkBoss(startX, startY);
-                    else boss = new OrangeBoss(startX, startY);
+                    if (bossType == 0) boss = new BossTank(this, startX, startY);
+                    else if (bossType == 1) boss = new PinkBoss(this, startX, startY);
+                    else boss = new OrangeBoss(this, startX, startY);
                     placed = true;
                 }
 
@@ -713,9 +309,9 @@ public class Launcher extends Application {
                     // 保底：使用固定位置
                     double startX = (WIDTH / 4.0) + (i % 2) * (WIDTH / 2.0);
                     double startY = (HEIGHT / 4.0) + (i / 2) * (HEIGHT / 3.0);
-                    if (bossType == 0) boss = new BossTank(startX, startY);
-                    else if (bossType == 1) boss = new PinkBoss(startX, startY);
-                    else boss = new OrangeBoss(startX, startY);
+                    if (bossType == 0) boss = new BossTank(this, startX, startY);
+                    else if (bossType == 1) boss = new PinkBoss(this, startX, startY);
+                    else boss = new OrangeBoss(this, startX, startY);
                     while (isCollidingWithWalls(boss.x, boss.y, boss.size)) {
                         boss.x += 20;
                         boss.y += 20;
@@ -746,7 +342,7 @@ public class Launcher extends Application {
 
                 int eType = random.nextInt(3);
                 Color eColor = (eType == TANK_NORMAL) ? Color.GREEN : (eType == TANK_SHOTGUN ? Color.YELLOW : Color.BLUE);
-                EnemyTank enemy = new EnemyTank(ex, ey, eType);
+                EnemyTank enemy = new EnemyTank(this, ex, ey, eType);
                 enemy.color = eColor;
                 enemies.add(enemy);
             }
@@ -793,7 +389,7 @@ public class Launcher extends Application {
     }
 
     // ---------- 碰撞辅助 ----------
-    private boolean isCollidingWithWalls(double x, double y, int size) {
+    public boolean isCollidingWithWalls(double x, double y, int size) {
         double rX = x - size / 2.0;
         double rY = y - size / 2.0;
         for (Wall w : walls) {
@@ -802,7 +398,7 @@ public class Launcher extends Application {
         return false;
     }
 
-    private boolean isCollidingWithOtherEnemies(EnemyTank current, double nextX, double nextY) {
+    public boolean isCollidingWithOtherEnemies(EnemyTank current, double nextX, double nextY) {
         for (EnemyTank other : enemies) {
             if (other == current) continue;
             if (getDistance(nextX, nextY, other.x, other.y) < 32) {
@@ -812,7 +408,7 @@ public class Launcher extends Application {
         return false;
     }
 
-    private double getDistance(double x1, double y1, double x2, double y2) {
+    public double getDistance(double x1, double y1, double x2, double y2) {
         return Math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
     }
 
@@ -821,7 +417,7 @@ public class Launcher extends Application {
         return before > threshold && after <= threshold;
     }
 
-    private int countWallsBetween(double x1, double y1, double x2, double y2) {
+    public int countWallsBetween(double x1, double y1, double x2, double y2) {
         int count = 0;
         for (Wall w : walls) {
             if (w.x == 0 || w.y == 0 || w.x + w.width == WIDTH || w.y + w.height == HEIGHT) {
@@ -1181,7 +777,7 @@ public class Launcher extends Application {
     // ==================== 动画辅助（粒子/飘字/爆炸/演出） ====================
 
     /** 玩家被击毁：死亡爆炸 + 碎片 + 红屏定格 + 结算音效，之后进入结算界面。 */
-    private void killPlayer() {
+    public void killPlayer() {
         if (dying) return;                                                   // 防重复触发
         boom(player.x, player.y, 13);
         spawnDebris(player.x, player.y, 20, player.color);
@@ -1207,7 +803,7 @@ public class Launcher extends Application {
 
     /** 触发一次爆炸：视觉光圈 + 音效 + 屏幕震动 + 火光/烟雾粒子。 */
     private void boom(double x, double y, double power) {
-        explosions.add(new ExplosionEffect(x, y));
+        explosions.add(new ExplosionEffect(this, x, y));
         if (sound != null) sound.play("explosion");
         shakeMag = Math.max(shakeMag, power);
         int count = (int) (8 + power);
@@ -1217,7 +813,7 @@ public class Launcher extends Application {
             Color c = (random.nextBoolean()) ? Color.ORANGE : Color.rgb(255, 220, 80);
             double life = 18 + random.nextInt(16);
             double sz = 2 + random.nextInt(3);
-            particles.add(new Particle(x, y, Math.cos(a) * sp, Math.sin(a) * sp,
+            particles.add(new Particle(this, x, y, Math.cos(a) * sp, Math.sin(a) * sp,
                     life, sz, c, 0.04, -sz / life));   // 火光边飞边缩
         }
         spawnSmoke(x, y, (int) (3 + power / 3));        // 爆炸残留烟雾
@@ -1231,30 +827,30 @@ public class Launcher extends Application {
             Color c = (random.nextInt(3) == 0) ? Color.ORANGE : base;
             double life = 16 + random.nextInt(18);
             double sz = 2 + random.nextInt(3);
-            particles.add(new Particle(x, y, Math.cos(a) * sp, Math.sin(a) * sp,
+            particles.add(new Particle(this, x, y, Math.cos(a) * sp, Math.sin(a) * sp,
                     life, sz, c, 0.06, -sz / life));   // 碎片边飞边缩
         }
     }
 
     /** 小火花（子弹反弹/打墙用）。 */
-    private void spawnSparks(double x, double y, int count) {
+    public void spawnSparks(double x, double y, int count) {
         for (int i = 0; i < count; i++) {
             double a = random.nextDouble() * Math.PI * 2;
             double sp = 1.0 + random.nextDouble() * 3.0;
             double life = 8 + random.nextInt(8);
             double sz = 1 + random.nextInt(2);
-            particles.add(new Particle(x, y, Math.cos(a) * sp, Math.sin(a) * sp,
+            particles.add(new Particle(this, x, y, Math.cos(a) * sp, Math.sin(a) * sp,
                     life, sz, Color.rgb(255, 240, 180), 0.05, -sz / life));
         }
     }
 
     /** 灰色烟雾：上飘、膨胀、缓慢淡出（爆炸残留 / 击毁余烟）。 */
-    private void spawnSmoke(double x, double y, int count) {
+    public void spawnSmoke(double x, double y, int count) {
         for (int i = 0; i < count; i++) {
             double a = random.nextDouble() * Math.PI * 2;
             double sp = 0.3 + random.nextDouble() * 0.9;
             double gray = 0.35 + random.nextDouble() * 0.2;
-            particles.add(new Particle(x, y, Math.cos(a) * sp, Math.sin(a) * sp - 0.5,
+            particles.add(new Particle(this, x, y, Math.cos(a) * sp, Math.sin(a) * sp - 0.5,
                     36 + random.nextInt(24), 4 + random.nextInt(4),
                     Color.color(gray, gray, gray, 0.5), -0.012, 0.22));
         }
@@ -1262,23 +858,23 @@ public class Launcher extends Application {
 
     /** 击毁瞬间的白色闪光 + 余烟（普通击杀用）。 */
     private void spawnKillBurst(double x, double y) {
-        particles.add(new Particle(x, y, 0, 0, 6, 16, Color.color(1, 1, 1, 1), 0, -2.2));
+        particles.add(new Particle(this, x, y, 0, 0, 6, 16, Color.color(1, 1, 1, 1), 0, -2.2));
         spawnSmoke(x, y, 4);
     }
 
     /** 坦克行进扬尘：车尾掉落的淡灰尘土。 */
-    private void spawnDust(double x, double y) {
+    public void spawnDust(double x, double y) {
         double a = random.nextDouble() * Math.PI * 2;
-        particles.add(new Particle(x, y, Math.cos(a) * 0.4, Math.sin(a) * 0.4 - 0.2,
+        particles.add(new Particle(this, x, y, Math.cos(a) * 0.4, Math.sin(a) * 0.4 - 0.2,
                 14 + random.nextInt(10), 2 + random.nextInt(2),
                 Color.color(0.55, 0.5, 0.45, 0.4), -0.01, 0.08));
     }
 
     /** 开火弹壳：向侧后方弹出的小铜壳。 */
-    private void spawnCasing(double x, double y, double angle) {
+    public void spawnCasing(double x, double y, double angle) {
         double side = angle + Math.PI / 2 * (random.nextBoolean() ? 1 : -1);
         double sp = 1.5 + random.nextDouble() * 1.5;
-        particles.add(new Particle(x, y, Math.cos(side) * sp, Math.sin(side) * sp - 1.0,
+        particles.add(new Particle(this, x, y, Math.cos(side) * sp, Math.sin(side) * sp - 1.0,
                 18 + random.nextInt(10), 2, Color.rgb(200, 160, 60), 0.14, -0.05));
     }
 
@@ -1296,7 +892,7 @@ public class Launcher extends Application {
 
     /** 飘字（击杀 +1 / +5 等），向上飘并渐隐。 */
     private void addFloatText(double x, double y, String text, Color color, double size) {
-        floatTexts.add(new FloatText(x, y, text, color, size));
+        floatTexts.add(new FloatText(this, x, y, text, color, size));
     }
 
     private void updateFloatTexts() {
@@ -1993,348 +1589,5 @@ public class Launcher extends Application {
         gc.fillRect(WIDTH / 2.0 - 30, HEIGHT / 2.0 + 50, 60, 60);
         gc.setFill(Color.BLACK);
         gc.fillRect(WIDTH / 2.0 - 10, HEIGHT / 2.0 + 80, 20, 30);
-    }
-
-    // ==================== 实体类 ====================
-
-    class Tank {
-        double x, y;
-        double angle;
-        int type;
-        Color color;
-        int size = 34;
-
-        double cooldown = 0;
-        int burstCount = 0;
-        double burstCoolDown = 0;
-
-        boolean isCharging = false;
-        double chargeTimer = 0;
-        double chargeTargetX, chargeTargetY;
-
-        // ---- 动画字段 ----
-        double muzzleTimer = 0;    // 炮口闪光计时
-        double recoil = 0;         // 开火后坐位移
-        double hitFlash = 0;       // 受击白闪计时
-        double spawnTimer = 0;     // 出场放大动画剩余帧
-        double spawnMax = 0;       // 出场动画总帧
-        double prevX, prevY;       // 上一帧位置（判断是否移动）
-        double bodyAngle;          // 车身朝向（跟随行进方向，独立于炮塔瞄准）
-        double treadPhase;         // 履带滚动相位
-        boolean movedThisFrame;    // 本帧是否在移动
-        double dustTimer;          // 扬尘节流
-
-        public Tank(double x, double y, int type) {
-            this.x = x;
-            this.y = y;
-            this.type = type;
-            if (type == TANK_NORMAL) this.color = Color.GREEN;
-            else if (type == TANK_SHOTGUN) this.color = Color.YELLOW;
-            else this.color = Color.BLUE;
-        }
-
-        public void update() {
-            if (cooldown > 0) cooldown -= dt;
-            if (burstCoolDown > 0) burstCoolDown -= dt;
-
-            // ---- 动画计时（全部 dt 缩放）----
-            if (muzzleTimer > 0) muzzleTimer -= dt;
-            if (recoil > 0.1) recoil *= Math.pow(0.78, dt); else recoil = 0;
-            if (hitFlash > 0) hitFlash -= dt;
-            if (spawnTimer > 0) spawnTimer -= dt;
-
-            // 移动检测：车身朝向、履带滚动相位、行进扬尘
-            double mvx = x - prevX, mvy = y - prevY;
-            double dist = Math.sqrt(mvx * mvx + mvy * mvy);
-            movedThisFrame = dist > 0.3;
-            if (movedThisFrame) {
-                bodyAngle = Math.atan2(mvy, mvx);
-                treadPhase += dist;
-                dustTimer -= dt;
-                if (dustTimer <= 0) {
-                    dustTimer = 4;
-                    spawnDust(x - Math.cos(bodyAngle) * 16, y - Math.sin(bodyAngle) * 16);
-                }
-            }
-            prevX = x; prevY = y;
-
-            if (isCharging) {
-                chargeTimer -= dt;
-                if (chargeTimer <= 0) {
-                    isCharging = false;
-                    fireArtilleryBullet();
-                }
-            }
-        }
-
-        public void move(double dx, double dy, ArrayList<Wall> walls) {
-            if (isCharging) return;
-            double nextX = x + dx;
-            double nextY = y + dy;
-            if (!isCollidingWithWalls(nextX, y, size)) {
-                x = nextX;
-            }
-            if (!isCollidingWithWalls(x, nextY, size)) {
-                y = nextY;
-            }
-        }
-
-        private void fireArtilleryBullet() {
-            double angleToTarget = Math.atan2(chargeTargetY - y, chargeTargetX - x);
-            Bullet b = new Bullet(x, y, angleToTarget, false, TANK_ARTILLERY, true, 26);
-            b.isEnemyBullet = (this instanceof EnemyTank);
-            b.color = Color.BLUE;
-            Launcher.this.bullets.add(b);
-            if (sound != null) sound.play("artillery_fire");
-            muzzleTimer = 6; recoil = 8; shakeMag = Math.max(shakeMag, 4);
-        }
-    }
-
-    class PlayerTank extends Tank {
-        double invincibleTimer = 0;
-        int health = 3;
-
-        public PlayerTank(double x, double y, int type) {
-            super(x, y, type);
-        }
-
-        @Override
-        public void update() {
-            super.update();
-            if (invincibleTimer > 0) {
-                invincibleTimer -= dt;
-            }
-            if (health <= 0 && !dying) {
-                killPlayer();   // 走死亡演出（爆炸+碎片+红屏），演出结束后进入结算
-            }
-        }
-
-        public void takeDamage(int amount) {
-            if (invincibleTimer > 0) return;
-            if (selectedBuff == 1 && safeZone != null && safeZone.active && safeZone.contains(this.x, this.y)) {
-                return;
-            }
-            health -= amount;
-            if (health < 0) health = 0;
-            if (health == 0) {
-                killPlayer();   // 走死亡演出，而非立即结算
-            } else {
-                invincibleTimer = 90; // 受击后短暂金身，避免连续判定（Lidada）
-            }
-        }
-
-        public void shoot(ArrayList<Bullet> bList, Point2D target) {
-            if (isCharging) return;
-
-            int bulletDamage = (selectedBuff == 2) ? 2 : 1;
-
-            if (type == TANK_NORMAL) {
-                if (burstCoolDown > 0) { if (sound != null) sound.play("empty_click"); return; }
-                if (cooldown <= 0) {
-                    Bullet b = new Bullet(x, y, angle, true, TANK_NORMAL, true, 6);
-                    b.isEnemyBullet = false;
-                    b.color = Color.RED;
-                    b.damage = bulletDamage;
-                    bList.add(b);
-                    if (sound != null) sound.play("shoot_normal");
-                    muzzleTimer = 4; recoil = 4; spawnCasing(x, y, angle);
-                    burstCount++;
-                    cooldown = 12;
-                    if (burstCount >= 5) {
-                        burstCoolDown = 60;
-                        burstCount = 0;
-                    }
-                }
-            } else if (type == TANK_SHOTGUN) {
-                if (cooldown <= 0) {
-                    double startAngle = angle - 0.3;
-                    for (int i = 0; i < 5; i++) {
-                        Bullet b = new Bullet(x, y, startAngle + (i * 0.15), false, TANK_SHOTGUN, true, 6);
-                        b.isEnemyBullet = false;
-                        b.color = Color.YELLOW;
-                        b.life = 25;
-                        b.damage = bulletDamage;
-                        bList.add(b);
-                    }
-                    if (sound != null) sound.play("shoot_shotgun");
-                    muzzleTimer = 5; recoil = 6; spawnCasing(x, y, angle);
-                    cooldown = 60;
-                }
-            } else if (type == TANK_ARTILLERY) {
-                if (cooldown <= 0) {
-                    double targetX = target.getX();
-                    double targetY = target.getY();
-
-                    int wallCount = countWallsBetween(this.x, this.y, targetX, targetY);
-                    int totalFrames = 40 + (wallCount * 24);
-                    if (totalFrames > 210) totalFrames = 210;
-
-                    double addedRadius = wallCount * 10;
-                    if (addedRadius > 40) addedRadius = 40;
-                    double finalRadius = 80 + addedRadius;
-
-                    Launcher.this.playerStrikes.add(new PlayerArtilleryStrike(targetX, targetY, totalFrames, finalRadius));
-                    if (sound != null) sound.play("artillery_fire");
-                    muzzleTimer = 6; recoil = 8;
-                    cooldown = 120;
-                }
-            }
-        }
-    }
-
-    class Bullet {
-        double x, y;
-        double vx, vy;
-        boolean canBounce;
-        int type;
-        boolean isEnemyBullet = false;
-        Color color = Color.RED;
-        int radius = 5;
-        double life = 300;
-        boolean isActive = true;
-        int speed;
-        boolean isHarmful;
-        int damage = 1;
-
-        public Bullet(double x, double y, double angle, boolean bounce, int type, boolean harmful, int speed) {
-            this.x = x;
-            this.y = y;
-            this.canBounce = bounce;
-            this.type = type;
-            this.isHarmful = harmful;
-            this.speed = speed;
-            this.vx = Math.cos(angle) * speed;
-            this.vy = Math.sin(angle) * speed;
-        }
-
-        public void move(ArrayList<Wall> walls) {
-            double actualVx = vx;
-            double actualVy = vy;
-
-            if (player != null && player.type == TANK_ARTILLERY && player.isCharging) {
-                actualVx *= 0.25;
-                actualVy *= 0.25;
-            }
-
-            x += actualVx * dt;
-            y += actualVy * dt;
-            life -= dt;
-            if (life <= 0) isActive = false;
-            for (Wall w : walls) {
-                if (w.intersects(x - radius, y - radius, radius * 2, radius * 2)) {
-                    if (canBounce) {
-                        if (x - radius < w.x || x + radius > w.x + w.width) {
-                            vx = -vx;
-                        } else {
-                            vy = -vy;
-                        }
-                        canBounce = false;
-                        spawnSparks(x, y, 5);
-                        if (sound != null) sound.play("ricochet", 0.4);
-                        break;
-                    } else {
-                        isActive = false;
-                        spawnSparks(x, y, 4);            // 打墙火花
-                        if (type == TANK_ARTILLERY) spawnSmoke(x, y, 2);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    class Wall {
-        int x, y, width, height;
-        public Wall(int x, int y, int w, int h) {
-            this.x = x;
-            this.y = y;
-            this.width = w;
-            this.height = h;
-        }
-
-        public boolean intersects(double rx, double ry, double rw, double rh) {
-            return rx < this.x + this.width && rx + rw > this.x && ry < this.y + this.height && ry + rh > this.y;
-        }
-    }
-
-    class ShieldItem {
-        int x, y;
-        public ShieldItem(int x, int y) {
-            this.x = x;
-            this.y = y;
-        }
-    }
-
-    class ExplosionEffect {
-        double x, y;
-        double timer = 90;
-        boolean active = true;
-
-        public ExplosionEffect(double x, double y) {
-            this.x = x;
-            this.y = y;
-        }
-
-        public void update() {
-            timer -= dt;
-            if (timer <= 0) active = false;
-        }
-    }
-
-    // ==================== 动画实体类（全部 dt 缩放，速度不随帧率变化） ====================
-
-    // 通用粒子（碎片/火花/火光/烟雾/扬尘/弹壳）
-    class Particle {
-        double x, y, vx, vy, size;
-        double life, maxLife;
-        Color color;
-        double gravity;   // 正=下落，负=上飘（烟雾）
-        double growth;    // 每帧尺寸变化，负=收缩，正=膨胀
-
-        public Particle(double x, double y, double vx, double vy, double life, double size, Color color,
-                        double gravity, double growth) {
-            this.x = x; this.y = y; this.vx = vx; this.vy = vy;
-            this.life = life; this.maxLife = life; this.size = size; this.color = color;
-            this.gravity = gravity; this.growth = growth;
-        }
-
-        public void update() {
-            x += vx * dt; y += vy * dt;
-            double drag = Math.pow(0.92, dt);   // 阻力减速（帧率无关）
-            vx *= drag; vy *= drag;
-            vy += gravity * dt;
-            size += growth * dt; if (size < 0) size = 0;
-            life -= dt;
-        }
-
-        public boolean alive() { return life > 0; }
-        public double alpha() { return Math.max(0, life / maxLife); }
-    }
-
-    // 飘字：向上飘 + 渐隐（击杀 +1 / +5 等）
-    class FloatText {
-        double x, y, size;
-        double life, maxLife;
-        String text;
-        Color color;
-
-        public FloatText(double x, double y, String text, Color color, double size) {
-            this.x = x; this.y = y; this.text = text; this.color = color; this.size = size;
-            this.life = 45; this.maxLife = 45;
-        }
-
-        public void update() { y -= 0.9 * dt; life -= dt; }
-        public boolean alive() { return life > 0; }
-        public double alpha() { return Math.max(0, life / maxLife); }
-    }
-
-    // 延时爆炸（Boss 连环爆用）
-    class DelayedBoom {
-        double x, y, power;
-        double delay;
-
-        public DelayedBoom(double x, double y, double delay, double power) {
-            this.x = x; this.y = y; this.delay = delay; this.power = power;
-        }
     }
 }
