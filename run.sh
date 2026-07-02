@@ -17,8 +17,8 @@ done
 # 编译
 mkdir -p out_run
 "$JAVAC" --module-path "$MP" --add-modules javafx.controls,javafx.media \
-  -d out_run Launcher.java SoundManager.java
+  -encoding UTF-8 -d out_run $(find src -name '*.java')
 
 # 运行（工作目录为项目根，确保能找到 assets/sound）
 exec "$JAVA" --module-path "$MP" --add-modules javafx.controls,javafx.media \
-  -cp out_run Launcher
+  -cp out_run tankgame.Launcher
