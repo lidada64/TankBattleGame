@@ -35,14 +35,16 @@ import tankgame.effects.FloatText;
 import tankgame.effects.Particle;
 
 public class Launcher extends Application {
-
     // ========== 游戏状态常量 ==========
     private static final int STATE_MENU = 0;
     private static final int STATE_PLAYING = 1;
     private static final int STATE_GAMEOVER = 2;
     private static final int STATE_HELP = 3;
     private static final int STATE_SELECT = 4;
-
+    // 战机专用变量
+    private double planeX = -200; // 初始位置在屏幕外
+    private double planeY = 150;  // 默认飞行高度
+    private boolean planeFlying = false; // 是否正在飞行
     // 坦克类型
     public static final int TANK_NORMAL = 0;
     public static final int TANK_SHOTGUN = 1;
@@ -58,6 +60,7 @@ public class Launcher extends Application {
     private boolean isCountingDown = false;
     private double countdownTimer = 0;
     private int gameState = STATE_MENU;
+    private Tank menuDisplayTank;
     private int menuStage = 0; // 0: 主菜单(开始/退出), 1: 选坦克/选Buff
     public PlayerTank player;
     private ArrayList<EnemyTank> enemies = new ArrayList<>();
@@ -199,6 +202,7 @@ public class Launcher extends Application {
         primaryStage.setTitle("坦克大战高级战略版 (JavaFX)");
         primaryStage.setScene(scene);
         primaryStage.setResizable(false);
+        this.menuDisplayTank = new Tank(this, 0, 0, 0);
         primaryStage.show();
     }
 
@@ -526,24 +530,21 @@ public class Launcher extends Application {
 
 
         // 空袭预警/打击
+        // ==================== 🛠️ 空袭逻辑与战机动画触发 ====================
         if (warningActive) {
             warningTimer -= dt;
             if (warningTimer <= 0) {
                 warningActive = false;
                 strikeActive = true;
                 strikeTimer = STRIKE_DURATION;
-                // 空袭预警/打击
-                if (warningActive) {
-                    warningTimer -= dt;
-                    if (warningTimer <= 0) {
-                        warningActive = false;
-                        strikeActive = true;
-                        strikeTimer = STRIKE_DURATION;
 
-                    }
-                }
+                // --- 【新增】触发战机飞过特效 ---
+                planeX = -200;                                     // 从左侧屏幕外进入
+                planeY = 50 + new java.util.Random().nextInt(200); // 在屏幕上半区随机高度
+                planeFlying = true;                                // 激活飞机动画
             }
         }
+
         if (strikeActive) {
             strikeTimer -= dt;
             if (strikeTimer <= 0) {
@@ -715,6 +716,13 @@ public class Launcher extends Application {
             if (sound != null) sound.play("levelup");
             level++;
             startNewLevel(false);
+        }
+
+        if (planeFlying) {
+            planeX += 15; // 飞行速度（可以根据手感调整）
+            if (planeX > WIDTH + 300) { // 飞出右侧屏幕后停止
+                planeFlying = false;
+            }
         }
     }
 
@@ -1041,10 +1049,14 @@ public class Launcher extends Application {
         else if (gameState == STATE_HELP) drawHelp(gc);
     }
 
-    // ---------- 选择场景 ----------
     private void drawSelectScene(GraphicsContext gc) {
-        gc.setFill(Color.rgb(20, 20, 40));
+        // 1. 底色
+        gc.setFill(Color.rgb(10, 15, 25));
         gc.fillRect(0, 0, WIDTH, HEIGHT);
+
+        // 2. 动态时间因子
+        double timeTick = System.currentTimeMillis() * 0.05;
+        double floatY = Math.sin(timeTick * 0.1) * 8; // 让所有卡牌一起缓慢上下浮动
 
         gc.setFill(Color.WHITE);
         gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 36));
@@ -1056,55 +1068,48 @@ public class Launcher extends Application {
                 "铁与火铸就传奇，\n所有坦克的子弹伤害加1",
                 "我方已消灭敌方空军，\n空袭范围增加，但飞机整备时间增加"
         };
-        Color[] cardColors = {Color.GREEN, Color.ORANGE, Color.CYAN};
+        Color[] cardColors = {Color.GREEN, Color.YELLOW, Color.CYAN};
 
         int cardWidth = 200, cardHeight = 260;
         int gap = 30;
         int startX = (WIDTH - (cardWidth * 3 + gap * 2)) / 2;
-        int cardY = (HEIGHT - cardHeight) / 2 + 20;
 
-        double mouseX = mousePoint.getX();
-        double mouseY = mousePoint.getY();
+        int cardY = (int) Math.round((HEIGHT - cardHeight) / 2 + 20 + floatY);
 
         for (int i = 0; i < 3; i++) {
             int x = startX + i * (cardWidth + gap);
-            int y = cardY;
-            boolean hover = (mouseX >= x && mouseX <= x + cardWidth &&
-                    mouseY >= y && mouseY <= y + cardHeight);
+            int y = (int)cardY;
 
-            Color base = cardColors[i];
-            Color fillColor = hover ? base.deriveColor(0, 1, 1.3, 1) : base.deriveColor(0, 1, 0.6, 1);
-            gc.setFill(fillColor);
+            // 【新增呼吸光圈效果】
+            double breath = 0.6 + 0.2 * Math.sin(timeTick * 0.15);
+            gc.setStroke(Color.color(1, 1, 1, breath * 0.5));
+            gc.setLineWidth(4);
+            gc.strokeRoundRect(x - 5, y - 5, cardWidth + 10, cardHeight + 10, 20, 20);
+
+            // 卡牌渲染
+            gc.setFill(Color.rgb(30, 40, 50, 0.9));
             gc.fillRoundRect(x, y, cardWidth, cardHeight, 15, 15);
-            gc.setStroke(Color.WHITE);
+
+            // 边框
+            gc.setStroke(cardColors[i]);
             gc.setLineWidth(2);
             gc.strokeRoundRect(x, y, cardWidth, cardHeight, 15, 15);
 
+            // 标题与文字
             gc.setFill(Color.WHITE);
-            gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 28));
-            gc.fillText(titles[i], x + 50, y + 40);
+            gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 24));
+            gc.fillText(titles[i], x + 20, y + 40);
 
-            gc.setFont(Font.font("Microsoft YaHei", FontWeight.NORMAL, 16));
-            gc.setFill(Color.rgb(220, 220, 220));
+            gc.setFont(Font.font("Microsoft YaHei", FontWeight.NORMAL, 14));
+            gc.setFill(Color.rgb(200, 220, 255));
             String[] lines = descs[i].split("\n");
             for (int j = 0; j < lines.length; j++) {
-                gc.fillText(lines[j], x + 15, y + 90 + j * 28);
+                gc.fillText(lines[j], x + 15, y + 80 + j * 25);
             }
-
-            gc.setFill(Color.rgb(255, 255, 255, 0.15));
-            gc.fillOval(x + cardWidth - 40, y + 10, 25, 25);
-            gc.setFill(Color.WHITE);
-            gc.setFont(Font.font("Arial", FontWeight.BOLD, 18));
-            gc.fillText(String.valueOf(i+1), x + cardWidth - 30, y + 32);
         }
-
-        gc.setFill(Color.rgb(200, 200, 200, 0.7));
-        gc.setFont(Font.font("Microsoft YaHei", FontWeight.NORMAL, 16));
-        gc.fillText("点击卡片选择，之后将开始游戏", WIDTH / 2.0 - 120, HEIGHT - 50);
     }
 
     // ---------- 菜单 ----------
-    // ==================== 🎮 UI 终极升级：全息双层主菜单（完美旋转缩放版） ====================
     private void drawMenu(GraphicsContext gc) {
         gc.setTextBaseline(VPos.TOP);
 
@@ -1112,112 +1117,72 @@ public class Launcher extends Application {
         gc.setFill(Color.rgb(10, 14, 20));
         gc.fillRect(0, 0, WIDTH, HEIGHT);
 
-        // 使用系统绝对毫秒数作为动画因子
         double timeTick = System.currentTimeMillis() * 0.05;
 
+        // ==================== STAGE 0: 主菜单 ====================
         if (menuStage == 0) {
-            // ==================== 🏠 LEVEL 1：纯粹的游戏主菜单 ====================
-            // 🎬 游戏超级大标题 Logo (带全息红色双层影)
             gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 54));
             gc.setFill(Color.rgb(255, 0, 0, 0.12));
             gc.fillText("TANK BATTLE", WIDTH / 2.0 - 183, HEIGHT / 2.0 - 138);
-
             gc.setFill(Color.rgb(240, 255, 255));
             gc.fillText("TANK BATTLE", WIDTH / 2.0 - 185, HEIGHT / 2.0 - 140);
 
-            // 按钮标准尺寸 (跟 handleMousePressed 的范围严格对齐)
-            double btnW = 200;
-            double btnH = 45;
+            double btnW = 200, btnH = 45;
             double btnX = WIDTH / 2.0 - btnW / 2.0;
 
-            // 🟢 按钮 A：【开始游戏】
+            // 按钮 A：开始游戏
             double startY = HEIGHT / 2.0 - 10;
             gc.setFill(Color.rgb(0, 220, 255, 0.08));
             gc.fillRect(btnX, startY, btnW, btnH);
-
-            double alphaA = 0.5 + 0.3 * Math.sin(timeTick * 0.1);
-            gc.setStroke(Color.color(0.0, 0.8, 1.0, alphaA));
-            gc.setLineWidth(1.5);
+            gc.setStroke(Color.color(0.0, 0.8, 1.0, 0.5 + 0.3 * Math.sin(timeTick * 0.1)));
             gc.strokeRect(btnX, startY, btnW, btnH);
-
-            gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 18));
             gc.setFill(Color.rgb(0, 230, 255));
+            gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 18));
             gc.fillText("⚡ 开始游戏", btnX + 52, startY + 11);
 
-            // 🔴 按钮 B：【退出游戏】
+            // 按钮 B：退出游戏
             double exitY = HEIGHT / 2.0 + 50;
             gc.setFill(Color.rgb(255, 60, 70, 0.06));
             gc.fillRect(btnX, exitY, btnW, btnH);
-
-            double alphaB = 0.4 + 0.2 * Math.sin(timeTick * 0.1 + Math.PI);
-            gc.setStroke(Color.color(1.0, 0.2, 0.3, alphaB));
-            gc.setLineWidth(1.5);
+            gc.setStroke(Color.color(1.0, 0.2, 0.3, 0.4 + 0.2 * Math.sin(timeTick * 0.1 + Math.PI)));
             gc.strokeRect(btnX, exitY, btnW, btnH);
-
             gc.setFill(Color.rgb(255, 70, 80));
             gc.fillText("❌ 退出游戏", btnX + 52, exitY + 11);
 
-        } else if (menuStage == 1) {
-            // ==================== 🛠️ LEVEL 2：进入点选坦克形态界面 ====================
-            // 战术顶部提示
-            gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 14));
+        }
+        // ==================== STAGE 1: 坦克选人 ====================
+        else if (menuStage == 1) {
             gc.setFill(Color.rgb(100, 150, 180));
+            gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 14));
             gc.fillText("⚙️ 战术终端：请指派重装坦克装甲型号...", 40, 25);
 
-            // 大标题
             gc.setFill(Color.WHITE);
             gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 45));
             gc.fillText("TANK BATTLE", WIDTH / 2.0 - 140, 60);
-            gc.setFont(Font.font("Microsoft YaHei", FontWeight.NORMAL, 20));
-            gc.fillText("请选择你的坦克形态：", WIDTH / 2.0 - 100, 150);
 
-            // 坦克槽配置
             int[] selectXs = {WIDTH / 2 - 250, WIDTH / 2 - 30, WIDTH / 2 + 190};
             String[] titles = {"普通坦克", "散弹坦克", "自行火炮"};
-            Color[] colors = {Color.GREEN, Color.YELLOW, Color.BLUE};
-
-            // 动态慢速旋转角度
-            double showAngle = (System.currentTimeMillis() * 0.09) % 360;
+            // 赋予三种坦克专属识别色
+            Color[] colors = {Color.rgb(0, 255, 128), Color.rgb(255, 215, 0), Color.rgb(0, 191, 255)};
 
             for (int i = 0; i < 3; i++) {
-                // 如果被选中，画醒目的红色高亮全息选框
-                if (selectedTankType == i) {
-                    gc.setStroke(Color.RED);
-                    gc.setLineWidth(3);
-                    gc.strokeRect(selectXs[i] - 40, 230, 140, 150);
-                } else {
-                    gc.setStroke(Color.rgb(255, 255, 255, 0.1));
-                    gc.setLineWidth(1);
-                    gc.strokeRect(selectXs[i] - 40, 230, 140, 150);
-                }
+                // 选框
+                gc.setStroke(selectedTankType == i ? Color.RED : Color.rgb(255, 255, 255, 0.1));
+                gc.setLineWidth(selectedTankType == i ? 3 : 1);
+                gc.strokeRect(selectXs[i] - 40, 230, 140, 150);
 
-                // ==================== 🔄 旋转与微调缩放核心 ====================
-                gc.save();
-                // 1. 计算坦克中心点 (为了让整体重心下移15像素从而在视觉上居中，Y由原来的280微调至295)
-                double cx = selectXs[i] + 30;
-                double cy = 295;
+                // 核心渲染逻辑
+                menuDisplayTank.type = i;
+                menuDisplayTank.x = selectXs[i] + 30;
+                menuDisplayTank.y = 295;
+                menuDisplayTank.bodyAngle = Math.PI / 2; // 车身朝下
+                menuDisplayTank.angle = -Math.PI / 2 + Math.sin(System.currentTimeMillis() * 0.003) * 0.5; // 炮管随时间摆动
+                menuDisplayTank.treadPhase = System.currentTimeMillis() * 0.05; // 履带滚动
 
-                gc.translate(cx, cy);         // 平移到坦克自身中心
-                gc.rotate(showAngle);         // 附加旋转动力
-                gc.scale(0.72, 0.72);         // 【新增核心】整体等比例缩小到72%，完美收纳进框中，决不溢出！
+                // 调用战斗渲染 (缩放 1.5 倍)
+                drawTankBody(gc, menuDisplayTank, 1.5, colors[i]);
 
-                // 2. 原汁原味原版方块拼接画法
-                // 【车身】
-                gc.setFill(colors[i]);
-                gc.fillRect(-30, -20, 60, 40);
-
-                // 【炮塔】
-                gc.setFill(Color.LIGHTGRAY);
-                gc.fillRect(-15, -40, 30, 20);
-
-                // 【炮管】
-                gc.setFill(Color.DARKGRAY);
-                gc.fillRect(-5, -70, 10, 30);
-
-                gc.restore();
-                // =================================================================================
-
-                // 绘制标题文本
+                // 文字标注
                 gc.setFill(Color.WHITE);
                 gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 18));
                 gc.fillText(titles[i], selectXs[i] - 10, 350);
@@ -1227,21 +1192,10 @@ public class Launcher extends Application {
             gc.setFill(Color.DARKGRAY);
             gc.fillRect(WIDTH / 2.0 - 100, 460, 200, 60);
             gc.setStroke(Color.WHITE);
-            gc.setLineWidth(1);
             gc.strokeRect(WIDTH / 2.0 - 100, 460, 200, 60);
             gc.setFill(Color.WHITE);
             gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, 24));
             gc.fillText("开始游戏", WIDTH / 2.0 - 48, 475);
-
-            // 右上角帮助球
-            gc.setFill(Color.DARKBLUE);
-            gc.fillOval(WIDTH - 70, 20, 40, 40);
-            gc.setStroke(Color.WHITE);
-            gc.setLineWidth(2);
-            gc.strokeOval(WIDTH - 70, 20, 40, 40);
-            gc.setFill(Color.WHITE);
-            gc.setFont(Font.font("Arial", FontWeight.BOLD, 24));
-            gc.fillText("?", WIDTH - 56, 24);
         }
     }
     // ---------- 帮助 ----------
@@ -1319,7 +1273,6 @@ public class Launcher extends Application {
 
         gc.restore();
     }
-
     /** 火炮蓄力聚能球：炮口处逐渐变大变亮，蓄满最亮。 */
     private void drawChargeOrb(GraphicsContext gc, Tank t) {
         double prog = 1.0 - t.chargeTimer / 90.0;     // 0 -> 1
@@ -1838,7 +1791,19 @@ public class Launcher extends Application {
             }
             gc.restore();
         }
+        if (planeFlying) {
+            gc.save();
+            // 简单绘制一个机身
+            gc.setFill(Color.rgb(50, 60, 70));
+            gc.fillPolygon(new double[]{planeX, planeX - 40, planeX - 40},
+                    new double[]{planeY, planeY - 20, planeY + 20}, 3);
+            gc.fillRect(planeX - 50, planeY - 5, 60, 10);
 
+            // 绘制尾焰，让它看起来有动力
+            gc.setFill(Color.ORANGE);
+            gc.fillRect(planeX - 60, planeY - 3, 10, 6);
+            gc.restore();
+        }
         // Boss 顶部血条（横向排列、缓降 + 受击抖动）
         drawBossBars(gc);
     }
